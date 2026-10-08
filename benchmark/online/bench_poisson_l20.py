@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Poisson-arrival Mini-SGLang benchmark for L20")
     parser.add_argument("--base-url", default="http://127.0.0.1:1919/v1")
     parser.add_argument("--input-len", type=int, default=1024)
+    parser.add_argument(
+        "--input-lens",
+        type=int,
+        nargs="+",
+        help="Balanced, seeded input-length mix; overrides --input-len.",
+    )
     parser.add_argument("--output-len", type=int, default=256)
     parser.add_argument("--request-count", type=int, default=16)
     parser.add_argument("--arrival-rates", type=float, nargs="+", default=[0.5, 1.0, 1.5])
@@ -67,6 +73,19 @@ def generate_arrival_offsets(rate: float, count: int, seed: int) -> list[float]:
     return offsets
 
 
+def generate_balanced_input_lengths(
+    input_lengths: list[int], count: int, seed: int
+) -> list[int]:
+    if not input_lengths or any(length < 1 for length in input_lengths) or count < 1:
+        raise ValueError("input lengths and request count must be positive")
+    if len(set(input_lengths)) != len(input_lengths):
+        raise ValueError("input lengths must be unique")
+
+    schedule = [input_lengths[index % len(input_lengths)] for index in range(count)]
+    random.Random(seed).shuffle(schedule)
+    return schedule
+
+
 def token_timestamps(result: RawResult, output_len: int) -> list[float]:
     if len(result.tics) < output_len + 1:
         raise RuntimeError(
@@ -79,25 +98,35 @@ def token_timestamps(result: RawResult, output_len: int) -> list[float]:
 def summarize_run(
     raw: list[RawResult],
     offsets: list[float],
+    input_lengths: list[int],
     output_len: int,
     ttft_slo_ms: float,
     tpot_slo_ms: float,
-) -> dict[str, float]:
+) -> dict[str, Any]:
+    if len(raw) != len(input_lengths):
+        raise ValueError("raw results and input lengths must have equal size")
+
     starts: list[float] = []
     last_tokens: list[float] = []
     ttfts: list[float] = []
     tpots: list[float] = []
     request_max_tpots: list[float] = []
     e2es: list[float] = []
-    for result in raw:
+    ttfts_by_input_len: dict[int, list[float]] = {}
+    e2es_by_input_len: dict[int, list[float]] = {}
+    for result, input_length in zip(raw, input_lengths, strict=True):
         tokens = token_timestamps(result, output_len)
         request_tpots = [b - a for a, b in zip(tokens, tokens[1:])]
+        ttft = tokens[0] - result.tics[0]
+        e2e = tokens[-1] - result.tics[0]
         starts.append(result.tics[0])
         last_tokens.append(tokens[-1])
-        ttfts.append(tokens[0] - result.tics[0])
+        ttfts.append(ttft)
         tpots.extend(request_tpots)
         request_max_tpots.append(max(request_tpots))
-        e2es.append(tokens[-1] - result.tics[0])
+        e2es.append(e2e)
+        ttfts_by_input_len.setdefault(input_length, []).append(ttft)
+        e2es_by_input_len.setdefault(input_length, []).append(e2e)
 
     duration = max(last_tokens) - min(starts)
     ttft_slo_s = ttft_slo_ms / 1000
@@ -125,6 +154,18 @@ def summarize_run(
         / len(request_max_tpots),
         "token_gaps_over_100ms": float(sum(value > 0.1 for value in tpots)),
         "token_gaps_over_1s": float(sum(value > 1.0 for value in tpots)),
+        "ttft_avg_by_input_len_ms": {
+            str(length): statistics.mean(values) * 1000
+            for length, values in sorted(ttfts_by_input_len.items())
+        },
+        "ttft_p90_by_input_len_ms": {
+            str(length): percentile(values, 0.90) * 1000
+            for length, values in sorted(ttfts_by_input_len.items())
+        },
+        "e2e_p90_by_input_len_s": {
+            str(length): percentile(e2es_by_input_len[length], 0.90)
+            for length in sorted(e2es_by_input_len)
+        },
     }
 
 
@@ -189,34 +230,59 @@ def mean_metric(runs: list[dict[str, Any]], key: str) -> float:
 
 def build_aggregates(
     runs: list[dict[str, Any]], arrival_rates: list[float]
-) -> list[dict[str, float]]:
+) -> list[dict[str, Any]]:
     aggregates = []
     for rate in arrival_rates:
         group = [run for run in runs if run["arrival_rate_req_s"] == rate]
         throughputs = [run["output_throughput_tok_s"] for run in group]
-        aggregates.append(
+        input_lengths = sorted(
             {
-                "arrival_rate_req_s": rate,
-                "throughput_tok_s": statistics.mean(throughputs),
-                "throughput_std": statistics.pstdev(throughputs),
-                "request_throughput_req_s": mean_metric(group, "request_throughput_req_s"),
-                "ttft_avg_ms": mean_metric(group, "ttft_avg_ms"),
-                "ttft_p90_ms": mean_metric(group, "ttft_p90_ms"),
-                "ttft_p99_ms": mean_metric(group, "ttft_p99_ms"),
-                "tpot_avg_ms": mean_metric(group, "tpot_avg_ms"),
-                "tpot_p99_ms": mean_metric(group, "tpot_p99_ms"),
-                "tpot_p999_ms": mean_metric(group, "tpot_p999_ms"),
-                "tpot_max_ms": max(run["tpot_max_ms"] for run in group),
-                "e2e_p90_s": mean_metric(group, "e2e_p90_s"),
-                "e2e_p99_s": mean_metric(group, "e2e_p99_s"),
-                "ttft_slo_attainment_pct": mean_metric(group, "ttft_slo_attainment_pct"),
-                "tpot_slo_attainment_pct": mean_metric(group, "tpot_slo_attainment_pct"),
-                "token_gaps_over_1s": mean_metric(group, "token_gaps_over_1s"),
-                "gpu_util_avg_pct": mean_metric(group, "gpu_util_avg_pct"),
-                "gpu_memory_peak_mib": max(run["gpu_memory_peak_mib"] for run in group),
-                "gpu_power_avg_w": mean_metric(group, "gpu_power_avg_w"),
-            }
+                length
+                for run in group
+                for length in run["ttft_avg_by_input_len_ms"]
+            },
+            key=int,
         )
+        aggregate: dict[str, Any] = {
+            "arrival_rate_req_s": rate,
+            "throughput_tok_s": statistics.mean(throughputs),
+            "throughput_std": statistics.pstdev(throughputs),
+            "request_throughput_req_s": mean_metric(group, "request_throughput_req_s"),
+            "ttft_avg_ms": mean_metric(group, "ttft_avg_ms"),
+            "ttft_p90_ms": mean_metric(group, "ttft_p90_ms"),
+            "ttft_p99_ms": mean_metric(group, "ttft_p99_ms"),
+            "tpot_avg_ms": mean_metric(group, "tpot_avg_ms"),
+            "tpot_p99_ms": mean_metric(group, "tpot_p99_ms"),
+            "tpot_p999_ms": mean_metric(group, "tpot_p999_ms"),
+            "tpot_max_ms": max(run["tpot_max_ms"] for run in group),
+            "e2e_p90_s": mean_metric(group, "e2e_p90_s"),
+            "e2e_p99_s": mean_metric(group, "e2e_p99_s"),
+            "ttft_slo_attainment_pct": mean_metric(group, "ttft_slo_attainment_pct"),
+            "tpot_slo_attainment_pct": mean_metric(group, "tpot_slo_attainment_pct"),
+            "token_gaps_over_1s": mean_metric(group, "token_gaps_over_1s"),
+            "gpu_util_avg_pct": mean_metric(group, "gpu_util_avg_pct"),
+            "gpu_memory_peak_mib": max(run["gpu_memory_peak_mib"] for run in group),
+            "gpu_power_avg_w": mean_metric(group, "gpu_power_avg_w"),
+            "ttft_avg_by_input_len_ms": {
+                length: statistics.mean(
+                    run["ttft_avg_by_input_len_ms"][length] for run in group
+                )
+                for length in input_lengths
+            },
+            "ttft_p90_by_input_len_ms": {
+                length: statistics.mean(
+                    run["ttft_p90_by_input_len_ms"][length] for run in group
+                )
+                for length in input_lengths
+            },
+            "e2e_p90_by_input_len_s": {
+                length: statistics.mean(
+                    run["e2e_p90_by_input_len_s"][length] for run in group
+                )
+                for length in input_lengths
+            },
+        }
+        aggregates.append(aggregate)
     return aggregates
 
 
@@ -232,6 +298,19 @@ def markdown_report(report: dict[str, Any]) -> str:
             "{gpu_util_avg_pct:.2f} |".format(**aggregate)
         )
     table = "\n".join(rows)
+    length_rows = []
+    for aggregate in report["aggregates"]:
+        for input_length in aggregate["ttft_avg_by_input_len_ms"]:
+            length_rows.append(
+                "| {rate:.1f} | {length} | {ttft_avg:.2f} | {ttft_p90:.2f} | {e2e_p90:.3f} |".format(
+                    rate=aggregate["arrival_rate_req_s"],
+                    length=input_length,
+                    ttft_avg=aggregate["ttft_avg_by_input_len_ms"][input_length],
+                    ttft_p90=aggregate["ttft_p90_by_input_len_ms"][input_length],
+                    e2e_p90=aggregate["e2e_p90_by_input_len_s"][input_length],
+                )
+            )
+    length_table = "\n".join(length_rows)
     return f"""# L20 Poisson-arrival benchmark result
 
 ## Principle
@@ -257,7 +336,7 @@ streamed token; TPOT excludes the final OpenAI finish event.
 - Decode-active prefill budget: `{config['server_decode_active_prefill_tokens']}`
 - Decode-overload prefill budget: `{config['server_decode_overload_prefill_tokens']}`
 - Decode-overload threshold: `{config['server_decode_overload_prefill_threshold']}` pending tokens
-- Workload: `{config['request_count']} x {config['input_len']} input / {config['output_len']} output tokens`
+- Workload: `{config['request_count']}` requests, balanced input lengths `{config['input_lens']}`, `{config['output_len']}` output tokens
 - Arrival rates: `{config['arrival_rates']}` requests/s
 - Repeats: `{config['repeats']}`
 - SLOs: TTFT <= `{config['ttft_slo_ms']}` ms; per-request maximum TPOT <= `{config['tpot_slo_ms']}` ms
@@ -268,6 +347,12 @@ streamed token; TPOT excludes the final OpenAI finish event.
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 {table}
 
+## Results by input length
+
+| Rate req/s | Input tokens | Average TTFT ms | P90 TTFT ms | P90 E2E s |
+| ---: | ---: | ---: | ---: | ---: |
+{length_table}
+
 Per-repeat measurements, scheduled arrival offsets, and normalized raw stream timestamps are stored
 in the machine-readable JSON result.
 """
@@ -275,8 +360,11 @@ in the machine-readable JSON result.
 
 async def main() -> None:
     args = parse_args()
-    if min(args.input_len, args.output_len, args.request_count, args.repeats) < 1:
+    input_lengths = args.input_lens or [args.input_len]
+    if min(*input_lengths, args.output_len, args.request_count, args.repeats) < 1:
         raise ValueError("token lengths, request count, and repeats must be positive")
+    if len(set(input_lengths)) != len(input_lengths):
+        raise ValueError("input lengths must be unique")
     if any(rate <= 0 for rate in args.arrival_rates):
         raise ValueError("arrival rates must be positive")
     if args.ttft_slo_ms <= 0 or args.tpot_slo_ms <= 0:
@@ -290,7 +378,7 @@ async def main() -> None:
         tokenizer = AutoTokenizer.from_pretrained(model, local_files_only=True)
 
         random.seed(args.seed - 1)
-        warmup = generate_prompt(tokenizer, min(128, args.input_len))
+        warmup = generate_prompt(tokenizer, min(128, min(input_lengths)))
         await benchmark_one(client, warmup, 16, model, pbar=False)
 
         runs: list[dict[str, Any]] = []
@@ -298,9 +386,13 @@ async def main() -> None:
             for repeat in range(args.repeats):
                 trace_seed = args.seed + rate_index * 100000 + repeat * 10000
                 offsets = generate_arrival_offsets(rate, args.request_count, trace_seed)
+                trace_input_lengths = generate_balanced_input_lengths(
+                    input_lengths, args.request_count, trace_seed + 1
+                )
                 random.seed(trace_seed)
                 prompts = [
-                    generate_prompt(tokenizer, args.input_len) for _ in range(args.request_count)
+                    generate_prompt(tokenizer, input_length)
+                    for input_length in trace_input_lengths
                 ]
                 trace = [
                     BenchmarkTrace(offset, prompt, args.output_len)
@@ -321,6 +413,7 @@ async def main() -> None:
                 metrics = summarize_run(
                     raw,
                     offsets,
+                    trace_input_lengths,
                     args.output_len,
                     args.ttft_slo_ms,
                     args.tpot_slo_ms,
@@ -330,6 +423,7 @@ async def main() -> None:
                     "arrival_rate_req_s": rate,
                     "repeat": repeat + 1,
                     "trace_seed": trace_seed,
+                    "input_lengths": trace_input_lengths,
                     **metrics,
                 }
                 print(json.dumps(run), flush=True)
@@ -353,6 +447,7 @@ async def main() -> None:
         "config": {
             "base_url": args.base_url,
             "input_len": args.input_len,
+            "input_lens": input_lengths,
             "output_len": args.output_len,
             "request_count": args.request_count,
             "arrival_rates": args.arrival_rates,

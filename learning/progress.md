@@ -17,6 +17,7 @@
 | Adaptive prefill | Complete | Active budget 4096 halves worst TPOT with no measured throughput loss |
 | Poisson budget sweep | Complete | 2048 reaches 100% TPOT SLO at 2.5 req/s with 0.12% throughput cost |
 | Queue-adaptive prefill | Complete | 3 overload interventions restore 100% TPOT SLO with <0.01% throughput change |
+| Mixed-length pressure | Complete | Static 2048 alone reaches 100% TPOT SLO; adaptive threshold 4096 triggers too late |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -30,5 +31,4 @@
 
 ## Next experiment
 
-Run experiment 012: validate token-pressure switching on a longer trace with mixed
-256/1024/4096-token prompts.
+Run experiment 013: replay the mixed-length traces with a 2048-token overload threshold.
