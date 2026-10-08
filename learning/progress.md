@@ -18,6 +18,7 @@
 | Poisson budget sweep | Complete | 2048 reaches 100% TPOT SLO at 2.5 req/s with 0.12% throughput cost |
 | Queue-adaptive prefill | Complete | 3 overload interventions restore 100% TPOT SLO with <0.01% throughput change |
 | Mixed-length pressure | Complete | Static 2048 alone reaches 100% TPOT SLO; adaptive threshold 4096 triggers too late |
+| Overload threshold 2048 | Complete | Restores 100% TPOT SLO but is behaviorally equivalent to static 2048 |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -31,4 +32,4 @@
 
 ## Next experiment
 
-Run experiment 013: replay the mixed-length traces with a 2048-token overload threshold.
+Run experiment 014: instrument prefill batch execution time and calibrate an L20 stall-time model.
