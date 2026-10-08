@@ -1,19 +1,178 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, List, Tuple
 
 import torch
 from minisgl.core import Req
-from minisgl.kvcache import BaseCacheHandle, MatchResult, create_prefix_cache
+from minisgl.kvcache import BaseCacheHandle, MatchResult, SizeInfo, create_prefix_cache
 from minisgl.utils import div_ceil
 
 if TYPE_CHECKING:
     from .utils import PendingReq
 
 
+@dataclass
+class CacheTelemetry:
+    enabled: bool = False
+    operations: int = 0
+    match_requests: int = 0
+    matchable_tokens: int = 0
+    matched_tokens: int = 0
+    miss_requests: int = 0
+    partial_hit_requests: int = 0
+    full_hit_requests: int = 0
+    insert_calls: int = 0
+    insert_input_tokens: int = 0
+    insert_existing_tokens: int = 0
+    inserted_tokens: int = 0
+    eviction_calls: int = 0
+    eviction_requested_tokens: int = 0
+    evicted_tokens: int = 0
+    current_evictable_tokens: int = 0
+    current_protected_tokens: int = 0
+    max_resident_tokens: int = 0
+    operation_samples: list[dict[str, int | bool | str]] = field(default_factory=list)
+
+    def _update_size(self, size_info: SizeInfo) -> None:
+        self.current_evictable_tokens = size_info.evictable_size
+        self.current_protected_tokens = size_info.protected_size
+        self.max_resident_tokens = max(self.max_resident_tokens, size_info.total_size)
+
+    def record_match(
+        self,
+        *,
+        uid: int,
+        matchable_tokens: int,
+        matched_tokens: int,
+        size_info: SizeInfo,
+    ) -> None:
+        if not self.enabled:
+            return
+        assert 0 <= matched_tokens <= matchable_tokens
+        self.operations += 1
+        self.match_requests += 1
+        self.matchable_tokens += matchable_tokens
+        self.matched_tokens += matched_tokens
+        if matched_tokens == 0:
+            self.miss_requests += 1
+            classification = "miss"
+        elif matched_tokens == matchable_tokens:
+            self.full_hit_requests += 1
+            classification = "full"
+        else:
+            self.partial_hit_requests += 1
+            classification = "partial"
+        self._update_size(size_info)
+        self.operation_samples.append(
+            {
+                "event": "match",
+                "uid": uid,
+                "matchable_tokens": matchable_tokens,
+                "matched_tokens": matched_tokens,
+                "classification": classification,
+                "resident_tokens": size_info.total_size,
+            }
+        )
+
+    def record_insert(
+        self,
+        *,
+        uid: int,
+        input_tokens: int,
+        existing_tokens: int,
+        inserted_tokens: int,
+        finished: bool,
+        size_info: SizeInfo,
+    ) -> None:
+        if not self.enabled:
+            return
+        assert 0 <= existing_tokens <= input_tokens
+        assert inserted_tokens >= 0
+        self.operations += 1
+        self.insert_calls += 1
+        self.insert_input_tokens += input_tokens
+        self.insert_existing_tokens += existing_tokens
+        self.inserted_tokens += inserted_tokens
+        self._update_size(size_info)
+        self.operation_samples.append(
+            {
+                "event": "insert",
+                "uid": uid,
+                "input_tokens": input_tokens,
+                "existing_tokens": existing_tokens,
+                "inserted_tokens": inserted_tokens,
+                "finished": finished,
+                "resident_tokens": size_info.total_size,
+            }
+        )
+
+    def record_eviction(
+        self,
+        *,
+        requested_tokens: int,
+        evicted_tokens: int,
+        size_info: SizeInfo,
+    ) -> None:
+        if not self.enabled:
+            return
+        assert requested_tokens > 0
+        assert evicted_tokens >= requested_tokens
+        self.operations += 1
+        self.eviction_calls += 1
+        self.eviction_requested_tokens += requested_tokens
+        self.evicted_tokens += evicted_tokens
+        self._update_size(size_info)
+        self.operation_samples.append(
+            {
+                "event": "evict",
+                "requested_tokens": requested_tokens,
+                "evicted_tokens": evicted_tokens,
+                "resident_tokens": size_info.total_size,
+            }
+        )
+
+    def snapshot(self) -> dict[str, object]:
+        token_hit_rate = (
+            self.matched_tokens / self.matchable_tokens if self.matchable_tokens > 0 else 0.0
+        )
+        return {
+            "operations": self.operations,
+            "match_requests": self.match_requests,
+            "matchable_tokens": self.matchable_tokens,
+            "matched_tokens": self.matched_tokens,
+            "token_hit_rate": token_hit_rate,
+            "miss_requests": self.miss_requests,
+            "partial_hit_requests": self.partial_hit_requests,
+            "full_hit_requests": self.full_hit_requests,
+            "insert_calls": self.insert_calls,
+            "insert_input_tokens": self.insert_input_tokens,
+            "insert_existing_tokens": self.insert_existing_tokens,
+            "inserted_tokens": self.inserted_tokens,
+            "eviction_calls": self.eviction_calls,
+            "eviction_requested_tokens": self.eviction_requested_tokens,
+            "evicted_tokens": self.evicted_tokens,
+            "current_evictable_tokens": self.current_evictable_tokens,
+            "current_protected_tokens": self.current_protected_tokens,
+            "max_resident_tokens": self.max_resident_tokens,
+            "operation_samples": list(self.operation_samples),
+        }
+
+    def drain_samples(self) -> None:
+        self.operation_samples.clear()
+
+
 class CacheManager:
-    def __init__(self, num_pages: int, page_size: int, page_table: torch.Tensor, type: str):
+    def __init__(
+        self,
+        num_pages: int,
+        page_size: int,
+        page_table: torch.Tensor,
+        type: str,
+        *,
+        telemetry_enabled: bool = False,
+    ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
         device = page_table.device
@@ -23,11 +182,21 @@ class CacheManager:
         self.num_pages = num_pages
         self.page_table = page_table
         self.page_size = page_size
+        self.telemetry = CacheTelemetry(enabled=telemetry_enabled)
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
         assert input_len > 0, "Input length must be greater than 0."
-        return self.prefix_cache.match_prefix(req.input_ids[: input_len - 1])
+        matchable_ids = req.input_ids[: input_len - 1]
+        result = self.prefix_cache.match_prefix(matchable_ids)
+        if self.telemetry.enabled:
+            self.telemetry.record_match(
+                uid=req.uid,
+                matchable_tokens=len(matchable_ids),
+                matched_tokens=result.cuda_handle.cached_len,
+                size_info=self.prefix_cache.size_info,
+            )
+        return result
 
     @property
     def available_size(self) -> int:
@@ -77,6 +246,15 @@ class CacheManager:
         else:  # keep the tail part, update the handle
             req.cache_handle = new_handle
             self.lock(new_handle)
+        if self.telemetry.enabled:
+            self.telemetry.record_insert(
+                uid=req.uid,
+                input_tokens=len(insert_ids),
+                existing_tokens=cached_len,
+                inserted_tokens=new_handle.cached_len - cached_len,
+                finished=finished,
+                size_info=self.prefix_cache.size_info,
+            )
 
     def check_integrity(self) -> None:
         self.prefix_cache.check_integrity()
@@ -105,7 +283,14 @@ class CacheManager:
 
     def _allocate(self, needed_pages: int) -> torch.Tensor:
         if needed_pages > (free_pages := len(self.free_slots)):
-            evicted = self.prefix_cache.evict((needed_pages - free_pages) * self.page_size)
+            requested_tokens = (needed_pages - free_pages) * self.page_size
+            evicted = self.prefix_cache.evict(requested_tokens)
+            if self.telemetry.enabled:
+                self.telemetry.record_eviction(
+                    requested_tokens=requested_tokens,
+                    evicted_tokens=len(evicted),
+                    size_info=self.prefix_cache.size_info,
+                )
             self.free_slots = torch.cat([self.free_slots, evicted[:: self.page_size]])
             assert len(self.free_slots) >= needed_pages, "Eviction did not free enough space."
         allocated = self.free_slots[:needed_pages]

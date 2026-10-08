@@ -222,6 +222,12 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--cache-telemetry-path",
+        default=ServerArgs.cache_telemetry_path,
+        help="Optional rank-0 JSONL path for cumulative prefix-cache telemetry.",
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

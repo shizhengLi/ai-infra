@@ -77,8 +77,13 @@ load and regressed overload throughput by 1.14%.
   response barrier passed all 288 treatment requests, reduced held-out maximum TPOT from 1.12 to
   0.79 seconds, and limited per-rate throughput regression to 0.125%. It is now part of the scoped
   L20/Qwen3-32B TP=4 recommendation while remaining disabled by default.
-- The online-scheduling sequence is complete for this workload. Experiment 020 returns to Phase 2
-  and begins radix-cache hit/eviction instrumentation before any cache-policy change.
+- Experiment 020 added opt-in rank-0 Radix Cache telemetry and completed the larger-model baseline.
+  Unique prompts hit 0.291% of matchable tokens, shared-system prompts hit 68.670%, and real
+  multi-turn conversations hit 60.619%. Shared-system post-first TTFT fell 69.21% versus unique
+  prompts. No eviction occurred because the largest resident set was only 12,799 of 305,066 tokens.
+- The online-scheduling sequence is complete for this workload. Experiment 021 remains in Phase 2:
+  deliberately force cache pressure and revisit prefixes so useful-hit retention and eviction
+  amplification can be measured before changing policy.
 
 ## Success criteria
 

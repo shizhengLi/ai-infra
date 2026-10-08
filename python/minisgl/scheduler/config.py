@@ -20,6 +20,7 @@ class SchedulerConfig(EngineConfig):
     max_prefill_streak: int = 0
     decode_result_before_prefill: bool = False
     prefill_telemetry_path: str | None = None
+    cache_telemetry_path: str | None = None
     cache_type: str = "radix"
     offline_mode: bool = False
 

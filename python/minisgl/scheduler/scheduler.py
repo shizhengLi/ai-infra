@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
+CACHE_TELEMETRY_FLUSH_OPERATIONS = 1024
+
 Indice2D: TypeAlias = Tuple[torch.Tensor, torch.Tensor]
 
 
@@ -52,6 +54,7 @@ class Scheduler(SchedulerIOMixin):
         from minisgl.engine import Engine
 
         self.engine = Engine(config)
+        self._is_primary_rank = config.tp_info.is_primary()
 
         # use another stream to overlap metadata processing with computation
         self.device = self.engine.device
@@ -62,7 +65,11 @@ class Scheduler(SchedulerIOMixin):
         # initialize other managers
         self.table_manager = TableManager(config.max_running_req, self.engine.page_table)
         self.cache_manager = CacheManager(
-            self.engine.num_pages, config.page_size, self.engine.page_table, config.cache_type
+            self.engine.num_pages,
+            config.page_size,
+            self.engine.page_table,
+            config.cache_type,
+            telemetry_enabled=(self._is_primary_rank and config.cache_telemetry_path is not None),
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(
@@ -88,7 +95,8 @@ class Scheduler(SchedulerIOMixin):
             config.decode_overload_prefill_tokens > 0 or self.prefill_telemetry_enabled
         )
         self._last_telemetry_prefill_batches = 0
-        self._is_primary_rank = config.tp_info.is_primary()
+        self.cache_telemetry_path = config.cache_telemetry_path
+        self._last_cache_telemetry_operations = 0
         self._prefill_batch_metadata: dict[int, dict[str, int | bool]] = {}
         self._prefill_timing_events: dict[int, tuple[torch.cuda.Event, torch.cuda.Event]] = {}
         self._pipeline_events: list[dict[str, object]] = []
@@ -105,6 +113,7 @@ class Scheduler(SchedulerIOMixin):
         """Called when the scheduler is idle to perform background tasks."""
         logger.info_rank0("Scheduler is idle, waiting for new reqs...")
         self._flush_prefill_telemetry("idle")
+        self._flush_cache_telemetry("idle")
         self.cache_manager.check_integrity()
 
     def overlap_loop(self, last_data: ForwardData | None) -> ForwardData | None:
@@ -139,6 +148,7 @@ class Scheduler(SchedulerIOMixin):
                 ongoing_data = (forward_input, self._forward(forward_input))
 
         self._process_last_data(last_data)
+        self._flush_cache_telemetry("periodic", min_new_operations=CACHE_TELEMETRY_FLUSH_OPERATIONS)
         return ongoing_data
 
     def normal_loop(self) -> None:
@@ -152,6 +162,7 @@ class Scheduler(SchedulerIOMixin):
             ongoing_data = (forward_input, self._forward(forward_input))
 
         self._process_last_data(ongoing_data)
+        self._flush_cache_telemetry("periodic", min_new_operations=CACHE_TELEMETRY_FLUSH_OPERATIONS)
 
     @torch.inference_mode()
     def run_forever(self) -> NoReturn:
@@ -168,6 +179,7 @@ class Scheduler(SchedulerIOMixin):
 
     def shutdown(self) -> None:
         self._flush_prefill_telemetry("shutdown")
+        self._flush_cache_telemetry("shutdown")
         torch.cuda.synchronize(self.device)
         self.sync_all_ranks()
         self.engine.shutdown()
@@ -352,6 +364,24 @@ class Scheduler(SchedulerIOMixin):
         self.prefill_telemetry.drain_execution_samples()
         self._pipeline_events.clear()
         self._last_telemetry_prefill_batches = self.prefill_telemetry.prefill_batches
+
+    def _flush_cache_telemetry(self, reason: str, *, min_new_operations: int = 1) -> None:
+        if not self._is_primary_rank or self.cache_telemetry_path is None:
+            return
+        telemetry = self.cache_manager.telemetry
+        if telemetry.operations - self._last_cache_telemetry_operations < min_new_operations:
+            return
+        payload = {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            **telemetry.snapshot(),
+        }
+        path = Path(self.cache_telemetry_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload) + "\n")
+        telemetry.drain_samples()
+        self._last_cache_telemetry_operations = telemetry.operations
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input
