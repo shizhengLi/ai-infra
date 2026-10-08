@@ -67,9 +67,14 @@ load and regressed overload throughput by 1.14%.
 - Follow-up experiment 002a removed the FA3/CUTLASS compatibility blocker and completed the L20
   backend sweep. `fi` remains the default based on measurement rather than backend availability.
 - Experiment 016 is the completed main experiment; its failed criteria are retained as results.
-- Experiment 017 is a targeted failure analysis and corrective robustness experiment, not an
-  unconstrained parameter sweep.
-- A final strict-SLO claim requires a new held-out validation after the failure mechanism is fixed.
+- Experiment 017 reproduced the remaining 1.34-second gap with timing telemetry and rejected the
+  global 2304-token bound: the failing cluster already used multiple 2304-token active batches.
+- Experiment 018 proved the remaining gap was a response-visibility issue in the overlap pipeline:
+  a completed decode result waited behind the following blocking prefill `_forward`. The opt-in
+  result-before-prefill barrier reduced maximum TPOT from 1.34 seconds to 0.78 seconds, passed all
+  144 boundary requests, and changed overload throughput by -0.060%.
+- Experiment 019 will run a fresh-seed held-out matrix across 0.5/0.9/1.5/2.5 requests/s. A final
+  strict-SLO claim and deployment-profile promotion depend on that result.
 
 ## Success criteria
 

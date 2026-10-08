@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter_ns
 from typing import TYPE_CHECKING, List, NamedTuple, NoReturn, Set, Tuple, TypeAlias
 
 import torch
@@ -90,6 +91,10 @@ class Scheduler(SchedulerIOMixin):
         self._is_primary_rank = config.tp_info.is_primary()
         self._prefill_batch_metadata: dict[int, dict[str, int | bool]] = {}
         self._prefill_timing_events: dict[int, tuple[torch.cuda.Event, torch.cuda.Event]] = {}
+        self._pipeline_events: list[dict[str, object]] = []
+        self._pipeline_batch_ids: dict[int, int] = {}
+        self._next_pipeline_batch_id = 0
+        self.decode_result_before_prefill = config.decode_result_before_prefill
         self.schedule_policy = PrefillSchedulePolicy(config.max_prefill_streak)
         # self.config = config
 
@@ -116,6 +121,15 @@ class Scheduler(SchedulerIOMixin):
         )
         for msg in self.receive_msg(blocking=blocking):
             self._process_one_msg(msg)
+
+        if (
+            self.decode_result_before_prefill
+            and last_data is not None
+            and last_data[0].batch.is_decode
+            and self.prefill_manager.runnable
+        ):
+            self._process_last_data(last_data)
+            last_data = None
 
         forward_input = self._schedule_next_batch()
         ongoing_data = None
@@ -163,7 +177,9 @@ class Scheduler(SchedulerIOMixin):
             return
 
         batch, (_, next_tokens_cpu, copy_done) = last_data[0].batch, last_data[1]
+        self._record_pipeline_event("process_start", batch)
         copy_done.synchronize()
+        self._record_pipeline_event("copy_ready", batch)
         self._record_prefill_execution(batch)
         reply: List[DetokenizeMsg] = []
         new_finished_reqs: Set[Req] = set()
@@ -189,6 +205,12 @@ class Scheduler(SchedulerIOMixin):
 
         self.finished_reqs = new_finished_reqs
         self.send_result(reply)
+        self._record_pipeline_event(
+            "result_sent",
+            batch,
+            reply_uids=[message.uid for message in reply],
+        )
+        self._pipeline_batch_ids.pop(id(batch), None)
 
     def _process_one_msg(self, msg: BaseBackendMsg) -> None:
         if isinstance(msg, BatchBackendMsg):
@@ -198,6 +220,11 @@ class Scheduler(SchedulerIOMixin):
             raise KeyboardInterrupt
         elif isinstance(msg, UserMsg):
             logger.debug_rank0("Received user msg: %s", msg)
+            self._record_pipeline_event(
+                "request_received",
+                uid=msg.uid,
+                input_tokens=len(msg.input_ids),
+            )
             input_len, max_seq_len = len(msg.input_ids), self.engine.max_seq_len
             max_output_len = max_seq_len - input_len
             if max_output_len <= 0:
@@ -291,27 +318,44 @@ class Scheduler(SchedulerIOMixin):
                     }
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
+            if self.prefill_telemetry_enabled and self._is_primary_rank:
+                self._next_pipeline_batch_id += 1
+                pipeline_batch_id = self._next_pipeline_batch_id
+                self._pipeline_batch_ids[id(batch)] = pipeline_batch_id
+                details: dict[str, object] = {
+                    "request_uids": [req.uid for req in batch.reqs]
+                }
+                if metadata := self._prefill_batch_metadata.get(id(batch)):
+                    metadata["pipeline_batch_id"] = pipeline_batch_id
+                    details.update(metadata)
+                self._record_pipeline_event("selected", batch, **details)
         return self._prepare_batch(batch) if batch else None
 
     def _flush_prefill_telemetry(self, reason: str) -> None:
         if not self._is_primary_rank or self.prefill_telemetry_path is None:
             return
-        if self.prefill_telemetry.prefill_batches == self._last_telemetry_prefill_batches:
+        if (
+            self.prefill_telemetry.prefill_batches == self._last_telemetry_prefill_batches
+            and not self._pipeline_events
+        ):
             return
         payload = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             "reason": reason,
             **self.prefill_telemetry.snapshot(),
+            "pipeline_events": list(self._pipeline_events),
         }
         path = Path(self.prefill_telemetry_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload) + "\n")
         self.prefill_telemetry.drain_execution_samples()
+        self._pipeline_events.clear()
         self._last_telemetry_prefill_batches = self.prefill_telemetry.prefill_batches
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input
+        self._record_pipeline_event("forward_start", batch)
         timing_events = None
         if self.prefill_telemetry_enabled and self._is_primary_rank and batch.is_prefill:
             timing_events = (
@@ -326,7 +370,29 @@ class Scheduler(SchedulerIOMixin):
             timing_events[1].record(self.engine.stream)
             self._prefill_timing_events[id(batch)] = timing_events
         self.decode_manager.filter_reqs(forward_input.batch.reqs)
+        self._record_pipeline_event("forward_return", batch)
         return forward_output
+
+    def _record_pipeline_event(
+        self,
+        event: str,
+        batch: Batch | None = None,
+        **details: object,
+    ) -> None:
+        if not self.prefill_telemetry_enabled or not self._is_primary_rank:
+            return
+        payload: dict[str, object] = {
+            "timestamp_ns": perf_counter_ns(),
+            "event": event,
+            **details,
+        }
+        if batch is not None:
+            payload.update(
+                batch_id=self._pipeline_batch_ids.get(id(batch)),
+                phase=batch.phase,
+                batch_size=batch.size,
+            )
+        self._pipeline_events.append(payload)
 
     def _record_prefill_execution(self, batch: Batch) -> None:
         if not batch.is_prefill or not self._is_primary_rank:

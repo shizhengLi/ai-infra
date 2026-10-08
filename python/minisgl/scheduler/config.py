@@ -18,6 +18,7 @@ class SchedulerConfig(EngineConfig):
     decode_overload_prefill_tokens: int = 0
     decode_overload_prefill_threshold: int = 0
     max_prefill_streak: int = 0
+    decode_result_before_prefill: bool = False
     prefill_telemetry_path: str | None = None
     cache_type: str = "radix"
     offline_mode: bool = False

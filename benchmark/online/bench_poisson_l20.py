@@ -51,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-decode-active-prefill-tokens", type=int, required=True)
     parser.add_argument("--server-decode-overload-prefill-tokens", type=int, default=0)
     parser.add_argument("--server-decode-overload-prefill-threshold", type=int, default=0)
+    parser.add_argument("--server-decode-result-before-prefill", action="store_true")
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -336,6 +337,7 @@ streamed token; TPOT excludes the final OpenAI finish event.
 - Decode-active prefill budget: `{config['server_decode_active_prefill_tokens']}`
 - Decode-overload prefill budget: `{config['server_decode_overload_prefill_tokens']}`
 - Decode-overload threshold: `{config['server_decode_overload_prefill_threshold']}` pending tokens
+- Decode result before prefill: `{config['server_decode_result_before_prefill']}`
 - Workload: `{config['request_count']}` requests, balanced input lengths `{config['input_lens']}`, `{config['output_len']}` output tokens
 - Arrival rates: `{config['arrival_rates']}` requests/s
 - Repeats: `{config['repeats']}`
@@ -429,6 +431,7 @@ async def main() -> None:
                 print(json.dumps(run), flush=True)
 
                 origin = min(result.tics[0] for result in raw)
+                run["trace_origin_perf_s"] = origin
                 run["scheduled_arrival_offsets_s"] = offsets
                 run["raw_tics_s"] = [
                     [timestamp - origin for timestamp in result.tics] for result in raw
@@ -466,6 +469,7 @@ async def main() -> None:
             "server_decode_overload_prefill_threshold": (
                 args.server_decode_overload_prefill_threshold
             ),
+            "server_decode_result_before_prefill": args.server_decode_result_before_prefill,
         },
         "runs": runs,
         "aggregates": build_aggregates(runs, args.arrival_rates),

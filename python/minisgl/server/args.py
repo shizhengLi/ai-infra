@@ -207,6 +207,15 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--decode-result-before-prefill",
+        action="store_true",
+        default=ServerArgs.decode_result_before_prefill,
+        help=(
+            "Process and send the previous decode result before submitting pending prefill work."
+        ),
+    )
+
+    parser.add_argument(
         "--prefill-telemetry-path",
         default=ServerArgs.prefill_telemetry_path,
         help="Optional JSONL path for cumulative prefill scheduling telemetry.",

@@ -22,6 +22,8 @@
 | Prefill stall-time model | Complete | 99 samples fit `11.19 + 0.31529 * tokens` ms with R-squared 0.99973 |
 | Model-derived budget | Complete | 2304 keeps 100% TPOT SLO and improves average TTFT 6.10%/1.85% vs 2048 |
 | Main scheduling experiment | Complete, criteria failed | 286/288 SLO passes; max TPOT 13.32s -> 1.34s, but light-load SLO and 2.5 req/s throughput criteria fail |
+| Global prefill bound | Complete, rejected | Reproduces 1.34s gap under 2304 active budget; global 2304 does not improve 70/72 light-load SLO |
+| Decode response visibility | Complete, candidate accepted | Result-before-prefill cuts max TPOT 1.34s -> 0.78s; 144/144 boundary requests pass at 0.060% overload throughput cost |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -34,8 +36,12 @@
   policy or a documented deployment profile.
 - Keep SM89 automatic attention on `fi`: the repaired `fa,fi` path is effectively tied and pure
   `fa` is 15.00% slower on the fixed 256-input/128-output workload.
+- Keep `--decode-result-before-prefill` opt-in until a fresh held-out matrix confirms experiment
+  018's 144/144 TPOT result. The paired boundary matrix justifies carrying the candidate forward,
+  but not changing the default from the trace family used to derive it.
 
 ## Next experiment
 
-Run experiment 017: reproduce the held-out light-load failure with telemetry, then validate whether
-a globally bounded 2304-token prefill budget closes the SLO gap without unacceptable overload cost.
+Run experiment 019: compare active-only 2304 with and without `--decode-result-before-prefill` on
+three fresh seeds at 0.5/0.9/1.5/2.5 requests/s. Promote the policy only if every request meets the
+TPOT SLO and per-rate mean throughput regression remains within 1%.
