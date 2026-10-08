@@ -242,6 +242,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--radix-partial-eviction-adaptive-reserve-max-pages",
+        type=int,
+        default=ServerArgs.radix_partial_eviction_adaptive_reserve_max_pages,
+        help="Bound output-aware partial-eviction reserve to this many pages.",
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

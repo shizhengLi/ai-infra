@@ -9,7 +9,7 @@
 | CUDA Graph sizing | Complete | 23 -> 19 graphs; initialization 8.3615 -> 7.3553 s |
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
 | Attention backend sweep | Complete | FA3 compatibility restored; `fa,fi` -0.17%, pure `fa` -15.00% vs `fi` median |
-| KV/radix experiments | Reserve experiment complete | Reserve 16 cuts pressure calls 32 -> 2; hot TTFT is within +3.47% of whole-leaf control |
+| KV/radix experiments | Adaptive reserve accepted | Mixed-output calls 34 -> 6; reclamation -8.34%; throughput -0.078%; 21/21 hot hits retained |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
 | TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
@@ -54,8 +54,13 @@
   16-page reserve. Experiment 023 reduced pressure calls from 32 to 2, kept target overshoot at
   1.000x, retained 21/21 hot probes and 348.3/519 mean D tokens, and limited hot TTFT change to
   +3.47% versus whole-leaf control. Keep both defaults disabled until variable-length validation.
+- Accept output-aware adaptive reserve for production-shaped follow-up. Experiment 024 passed every
+  pre-registered mixed-length rule across three seeds: complete-sequence calls fell 82.35%, actual
+  reclamation fell 8.34%, all 21 hot probes remained 519/519 hits, throughput changed -0.078%, and
+  hot TTFT improved 4.23%. Keep the generic default disabled because concurrency and the 128-page
+  cap have not yet been validated under realistic arrivals.
 
 ## Next experiment
 
-Run experiment 024: test fixed reserve 16 across output lengths 16/64/128 and mixed sequential
-lengths, then compare it with a bounded adaptive reserve based on expected near-term allocation.
+Run experiment 025: compare fixed 16 and adaptive-max-128 under concurrent variable-length arrivals,
+including enough overlap to test whether summing admitted remaining demand over-reserves cache.

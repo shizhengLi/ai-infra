@@ -180,6 +180,7 @@ class CacheManager:
         telemetry_enabled: bool = False,
         radix_partial_eviction: bool = False,
         radix_partial_eviction_reserve_pages: int = 0,
+        radix_partial_eviction_adaptive_reserve_max_pages: int = 0,
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -197,8 +198,20 @@ class CacheManager:
             raise ValueError("Partial-eviction reserve pages must be non-negative")
         if radix_partial_eviction_reserve_pages > 0 and not radix_partial_eviction:
             raise ValueError("Partial-eviction reserve requires partial-leaf eviction")
+        if radix_partial_eviction_adaptive_reserve_max_pages < 0:
+            raise ValueError("Adaptive partial-eviction reserve maximum must be non-negative")
+        if radix_partial_eviction_adaptive_reserve_max_pages > 0 and not radix_partial_eviction:
+            raise ValueError("Adaptive reserve requires partial-leaf eviction")
+        if (
+            radix_partial_eviction_reserve_pages > 0
+            and radix_partial_eviction_adaptive_reserve_max_pages > 0
+        ):
+            raise ValueError("Fixed and adaptive partial-eviction reserves are mutually exclusive")
         self.radix_partial_eviction = radix_partial_eviction
         self.radix_partial_eviction_reserve_pages = radix_partial_eviction_reserve_pages
+        self.radix_partial_eviction_adaptive_reserve_max_pages = (
+            radix_partial_eviction_adaptive_reserve_max_pages
+        )
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -234,8 +247,18 @@ class CacheManager:
                 needed_pages += last_page - first_page
                 allocation_info.append((req.table_idx, first_page, last_page))
         if needed_pages > 0:
-            allocated = self._page_to_token(self._allocate(needed_pages))
+            reserve_pages = self._get_adaptive_reserve_pages(reqs)
+            allocated = self._page_to_token(
+                self._allocate(needed_pages, reserve_pages=reserve_pages)
+            )
             _write_page_table(self.page_table, allocated, allocation_info, self.page_size)
+
+    def _get_adaptive_reserve_pages(self, reqs: List[Req]) -> int | None:
+        max_pages = self.radix_partial_eviction_adaptive_reserve_max_pages
+        if max_pages == 0:
+            return None
+        remaining_pages = sum(div_ceil(req.remain_len, self.page_size) for req in reqs)
+        return min(remaining_pages, max_pages)
 
     def cache_req(self, req: Req, *, finished: bool) -> None:
         # ==================================== valid cache region ====================================
@@ -297,10 +320,15 @@ class CacheManager:
             del self._free
             self.free_slots = torch.cat([self.free_slots] + lazy_free_list)
 
-    def _allocate(self, needed_pages: int) -> torch.Tensor:
+    def _allocate(self, needed_pages: int, *, reserve_pages: int | None = None) -> torch.Tensor:
         if needed_pages > (free_pages := len(self.free_slots)):
             requested_tokens = (needed_pages - free_pages) * self.page_size
-            reserve_tokens = self.radix_partial_eviction_reserve_pages * self.page_size
+            reserve_pages = (
+                self.radix_partial_eviction_reserve_pages
+                if reserve_pages is None
+                else reserve_pages
+            )
+            reserve_tokens = reserve_pages * self.page_size
             evictable_tokens = self.prefix_cache.size_info.evictable_size
             assert requested_tokens <= evictable_tokens, (
                 f"Cannot satisfy {requested_tokens} cache tokens with only "

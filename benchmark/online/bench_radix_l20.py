@@ -37,11 +37,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--multi-system-tokens", type=int, default=256)
     parser.add_argument("--multi-user-tokens", type=int, default=128)
     parser.add_argument("--pressure-prompt-tokens", type=int, default=512)
+    parser.add_argument(
+        "--pressure-output-lens",
+        help="Comma-separated output lengths for pressure prefixes A-I.",
+    )
     parser.add_argument("--seed", type=int, default=3000042)
     parser.add_argument("--server-tp", type=int, default=4)
     parser.add_argument("--server-num-pages", type=int, default=0)
     parser.add_argument("--server-radix-partial-eviction", action="store_true")
     parser.add_argument("--server-radix-partial-eviction-reserve-pages", type=int, default=0)
+    parser.add_argument(
+        "--server-radix-partial-eviction-adaptive-reserve-max-pages",
+        type=int,
+        default=0,
+    )
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -209,6 +218,11 @@ async def run_pressure_revisit(
     args: argparse.Namespace,
 ) -> list[dict[str, Any]]:
     labels = list("ABCDEFGHI")
+    output_lens = (
+        dict(zip(labels, args.pressure_output_lens))
+        if args.pressure_output_lens
+        else dict.fromkeys(labels, args.output_len)
+    )
     prompts = {
         label: make_prompt(
             tokenizer,
@@ -228,7 +242,15 @@ async def run_pressure_revisit(
     runs = []
     for index, (phase, label, expected_cache_state) in enumerate(sequence):
         messages = [{"role": "user", "content": prompts[label]}]
-        run = await measure_one(client, model, tokenizer, args, messages, index)
+        run = await measure_one(
+            client,
+            model,
+            tokenizer,
+            args,
+            messages,
+            index,
+            output_len=output_lens[label],
+        )
         run.update(
             phase=phase,
             prefix=label,
@@ -247,20 +269,22 @@ async def measure_one(
     request_index: int,
     *,
     return_output: bool = False,
+    output_len: int | None = None,
 ) -> dict[str, Any] | tuple[dict[str, Any], str]:
+    output_len = output_len if output_len is not None else args.output_len
     input_tokens = templated_token_count(tokenizer, messages)
     timestamps, output_text = await run_request(
         client,
         model=model,
         messages=messages,
-        output_len=args.output_len,
+        output_len=output_len,
     )
-    token_timestamps = timestamps[1 : args.output_len + 1]
+    token_timestamps = timestamps[1 : output_len + 1]
     run = {
         "request": request_index + 1,
         "expected_server_uid": request_index + 1,
         "input_tokens": input_tokens,
-        "output_tokens": args.output_len,
+        "output_tokens": output_len,
         "ttft_ms": (token_timestamps[0] - timestamps[0]) * 1000,
         "e2e_s": token_timestamps[-1] - timestamps[0],
         "tpot_avg_ms": statistics.mean(
@@ -327,8 +351,11 @@ def markdown_report(report: dict[str, Any]) -> str:
 - Timestamp: `{report['timestamp_utc']}`
 - Git revision: `{report['environment']['git_revision']}`
 - Tensor parallelism: `{report['config']['server_tp']}`
+- KV pages: `{report['config']['server_num_pages']}`
 - Partial-leaf eviction: `{report['config']['server_radix_partial_eviction']}`
 - Partial-eviction reserve: `{report['config']['server_radix_partial_eviction_reserve_pages']}` pages
+- Adaptive reserve maximum: `{report['config']['server_radix_partial_eviction_adaptive_reserve_max_pages']}` pages
+- Pressure output lengths A-I: `{report['config']['pressure_output_lens']}`
 - Output length: `{report['config']['output_len']}` tokens
 - Seed: `{report['config']['seed']}`
 - Expected measured server UIDs: `1-{summary['requests']}` (`0` is warmup)
@@ -366,6 +393,14 @@ async def main() -> None:
         args.conversation_count * args.turns != args.request_count
     ):
         raise ValueError("multi-turn request count must equal conversation count times turns")
+    if args.pressure_output_lens:
+        args.pressure_output_lens = [
+            int(value.strip()) for value in args.pressure_output_lens.split(",")
+        ]
+        if len(args.pressure_output_lens) != 9:
+            raise ValueError("pressure output lengths must contain exactly nine values for A-I")
+        if any(value < 2 for value in args.pressure_output_lens):
+            raise ValueError("pressure output lengths must all be at least two")
 
     async with OpenAI(base_url=args.base_url, api_key="dummy") as client:
         models = await client.models.list()

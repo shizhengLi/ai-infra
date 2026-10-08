@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -239,4 +241,49 @@ def test_partial_eviction_reserve_requires_valid_partial_mode(reserve_pages: int
             type="radix",
             radix_partial_eviction=False,
             radix_partial_eviction_reserve_pages=reserve_pages,
+        )
+
+
+def test_adaptive_reserve_uses_remaining_batch_pages_and_cap() -> None:
+    manager = make_reserve_manager(num_pages=16, page_size=4, reserve_pages=0)
+    manager.radix_partial_eviction_adaptive_reserve_max_pages = 6
+    reqs = [SimpleNamespace(remain_len=5), SimpleNamespace(remain_len=13)]
+
+    assert manager._get_adaptive_reserve_pages(reqs) == 6
+
+    manager.radix_partial_eviction_adaptive_reserve_max_pages = 8
+    assert manager._get_adaptive_reserve_pages(reqs) == 6
+
+
+def test_disabled_adaptive_reserve_defers_to_fixed_policy() -> None:
+    manager = make_reserve_manager(num_pages=8, reserve_pages=2)
+
+    assert manager._get_adaptive_reserve_pages([SimpleNamespace(remain_len=7)]) is None
+
+
+@pytest.mark.parametrize(
+    ("partial", "fixed", "adaptive", "match"),
+    [
+        (True, 0, -1, "must be non-negative"),
+        (False, 0, 16, "requires partial-leaf eviction"),
+        (True, 16, 16, "mutually exclusive"),
+    ],
+)
+def test_adaptive_reserve_rejects_invalid_configuration(
+    partial: bool,
+    fixed: int,
+    adaptive: int,
+    match: str,
+) -> None:
+    core.set_global_ctx(core.Context(page_size=1))
+
+    with pytest.raises(ValueError, match=match):
+        CacheManager(
+            8,
+            1,
+            torch.empty((1, 8), dtype=torch.int32),
+            type="radix",
+            radix_partial_eviction=partial,
+            radix_partial_eviction_reserve_pages=fixed,
+            radix_partial_eviction_adaptive_reserve_max_pages=adaptive,
         )

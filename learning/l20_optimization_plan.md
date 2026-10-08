@@ -94,8 +94,13 @@ load and regressed overload throughput by 1.14%.
   rule. Across three seeds it reduced pressure calls from 32 to 2, kept reclamation within 0.13% of
   exact trimming, retained 21/21 hot probes, and limited hot TTFT to +3.47% versus whole-leaf
   control. Reserve 16 is accepted only for the fixed 16-output-token experiment profile.
+- Experiment 024 implemented a bounded output-aware reserve and validated it at uniform 16/64/128
+  output lengths plus a three-seed mixed-length workload. In the mixed confirmation it retained all
+  21/21 complete hot-prefix matches, reduced mean complete-sequence eviction calls from 34 to 6 and
+  reclamation by 8.34%, changed throughput by -0.078%, and improved hot TTFT by 4.23%. The policy is
+  accepted for production-shaped concurrency testing but remains disabled by default.
 - The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  024: validate fixed and adaptive reserves across variable output lengths before broadening scope.
+  025: validate adaptive reserve under concurrent variable-length arrivals before broadening scope.
 
 ## Success criteria
 

@@ -24,6 +24,7 @@ class SchedulerConfig(EngineConfig):
     cache_type: str = "radix"
     radix_partial_eviction: bool = False
     radix_partial_eviction_reserve_pages: int = 0
+    radix_partial_eviction_adaptive_reserve_max_pages: int = 0
     offline_mode: bool = False
 
     # networking config

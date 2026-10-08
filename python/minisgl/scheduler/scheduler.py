@@ -71,8 +71,9 @@ class Scheduler(SchedulerIOMixin):
             config.cache_type,
             telemetry_enabled=(self._is_primary_rank and config.cache_telemetry_path is not None),
             radix_partial_eviction=config.radix_partial_eviction,
-            radix_partial_eviction_reserve_pages=(
-                config.radix_partial_eviction_reserve_pages
+            radix_partial_eviction_reserve_pages=(config.radix_partial_eviction_reserve_pages),
+            radix_partial_eviction_adaptive_reserve_max_pages=(
+                config.radix_partial_eviction_adaptive_reserve_max_pages
             ),
         )
         self.decode_manager = DecodeManager(config.page_size)
@@ -325,9 +326,7 @@ class Scheduler(SchedulerIOMixin):
                         "pending_requests": pending_requests,
                         "admitted_tokens": admitted_tokens,
                         "prefill_requests": len(batch.reqs),
-                        "chunked_requests": sum(
-                            isinstance(req, ChunkedReq) for req in batch.reqs
-                        ),
+                        "chunked_requests": sum(isinstance(req, ChunkedReq) for req in batch.reqs),
                         "cached_tokens": sum(req.cached_len for req in batch.reqs),
                         "max_sequence_tokens": max(req.device_len for req in batch.reqs),
                         "active_decode_requests": active_decode_requests,
@@ -338,9 +337,7 @@ class Scheduler(SchedulerIOMixin):
                 self._next_pipeline_batch_id += 1
                 pipeline_batch_id = self._next_pipeline_batch_id
                 self._pipeline_batch_ids[id(batch)] = pipeline_batch_id
-                details: dict[str, object] = {
-                    "request_uids": [req.uid for req in batch.reqs]
-                }
+                details: dict[str, object] = {"request_uids": [req.uid for req in batch.reqs]}
                 if metadata := self._prefill_batch_metadata.get(id(batch)):
                     metadata["pipeline_batch_id"] = pipeline_batch_id
                     details.update(metadata)
