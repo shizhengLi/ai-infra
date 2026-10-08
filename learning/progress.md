@@ -9,7 +9,7 @@
 | CUDA Graph sizing | Complete | 23 -> 19 graphs; initialization 8.3615 -> 7.3553 s |
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
 | Attention backend sweep | Complete | FA3 compatibility restored; `fa,fi` -0.17%, pure `fa` -15.00% vs `fi` median |
-| KV/radix experiments | Observability complete | 0.291% unique, 68.670% shared-system, 60.619% multi-turn token hit rates |
+| KV/radix experiments | Pressure baseline complete | LRU retained 21/21 useful probes; leaf eviction amplification 3.061x |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
 | TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
@@ -43,9 +43,12 @@
 - Accept opt-in rank-0 Radix Cache telemetry. Shared-system reuse matches 776/1,036 tokens after the
   cold request and lowers post-first TTFT by 69.21% versus unique prompts. The baseline is far below
   cache capacity, so no eviction-policy claim is justified yet.
+- Keep LRU ordering: under a controlled 4096-token pool it retained 21/21 expected useful prefixes
+  across three seeds and evicted older C/D first. Target node granularity instead: pressure eviction
+  reclaimed 3.061x the requested tokens because whole 532-token leaves were removed.
 
 ## Next experiment
 
-Run experiment 021: build a controlled-capacity prefix-revisit workload that forces eviction,
-measure useful-hit retention and eviction amplification, and only then select an eviction-policy or
-cache-sizing optimization.
+Run experiment 022: add default-disabled, page-aligned partial-leaf tail eviction. Compare against
+experiment 021 for amplification, retained partial-prefix tokens, miss-probe TTFT, hot-prefix
+retention, and cache integrity.

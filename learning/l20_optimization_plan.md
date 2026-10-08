@@ -81,9 +81,12 @@ load and regressed overload throughput by 1.14%.
   Unique prompts hit 0.291% of matchable tokens, shared-system prompts hit 68.670%, and real
   multi-turn conversations hit 60.619%. Shared-system post-first TTFT fell 69.21% versus unique
   prompts. No eviction occurred because the largest resident set was only 12,799 of 305,066 tokens.
-- The online-scheduling sequence is complete for this workload. Experiment 021 remains in Phase 2:
-  deliberately force cache pressure and revisit prefixes so useful-hit retention and eviction
-  amplification can be measured before changing policy.
+- Experiment 021 forced eviction with a 4096-token pool across three fresh seeds. LRU ordering
+  retained all 21/21 pooled useful probes and consistently evicted older C/D first, but whole-leaf
+  eviction reclaimed 3.061x the requested pressure tokens. LRU replacement is rejected; compressed
+  node granularity is the measured target.
+- The online-scheduling sequence is complete for this workload. Experiment 022 remains in Phase 2:
+  compare default-disabled, page-aligned partial-leaf tail eviction against experiment 021.
 
 ## Success criteria
 

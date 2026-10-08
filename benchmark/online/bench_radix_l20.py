@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--scenario",
         required=True,
-        choices=["unique", "shared-system", "multi-turn"],
+        choices=["unique", "shared-system", "multi-turn", "pressure-revisit"],
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:1919/v1")
     parser.add_argument("--request-count", type=int, default=12)
@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shared-user-tokens", type=int, default=256)
     parser.add_argument("--multi-system-tokens", type=int, default=256)
     parser.add_argument("--multi-user-tokens", type=int, default=128)
+    parser.add_argument("--pressure-prompt-tokens", type=int, default=512)
     parser.add_argument("--seed", type=int, default=3000042)
     parser.add_argument("--server-tp", type=int, default=4)
     parser.add_argument("--server-num-pages", type=int, default=0)
@@ -199,6 +200,42 @@ async def run_multi_turn(
     return runs
 
 
+async def run_pressure_revisit(
+    client: OpenAI,
+    model: str,
+    tokenizer: Any,
+    args: argparse.Namespace,
+) -> list[dict[str, Any]]:
+    labels = list("ABCDEFGHI")
+    prompts = {
+        label: make_prompt(
+            tokenizer,
+            args.pressure_prompt_tokens,
+            args.seed + 6000 + index,
+        )
+        for index, label in enumerate(labels)
+    }
+    sequence = (
+        [("fill", label, "cold") for label in "ABCDEF"]
+        + [("refresh", label, "hit") for label in "AB"]
+        + [("pressure", label, "cold") for label in "GHI"]
+        + [("probe-survivor", label, "hit") for label in "IHGBAFE"]
+        + [("probe-evicted", label, "miss") for label in "DC"]
+    )
+
+    runs = []
+    for index, (phase, label, expected_cache_state) in enumerate(sequence):
+        messages = [{"role": "user", "content": prompts[label]}]
+        run = await measure_one(client, model, tokenizer, args, messages, index)
+        run.update(
+            phase=phase,
+            prefix=label,
+            expected_cache_state=expected_cache_state,
+        )
+        runs.append(run)
+    return runs
+
+
 async def measure_one(
     client: OpenAI,
     model: str,
@@ -273,6 +310,8 @@ def markdown_report(report: dict[str, Any]) -> str:
         label = str(run["request"])
         if "conversation" in run:
             label += f" (c{run['conversation']}t{run['turn']})"
+        elif "phase" in run:
+            label += f" ({run['phase']}:{run['prefix']})"
         rows.append(
             f"| {label} | {run['input_tokens']} | {run['ttft_ms']:.2f} | "
             f"{run['tpot_avg_ms']:.2f} | {run['e2e_s']:.3f} |"
@@ -336,8 +375,10 @@ async def main() -> None:
             runs = await run_unique(client, model, tokenizer, args)
         elif args.scenario == "shared-system":
             runs = await run_shared_system(client, model, tokenizer, args)
-        else:
+        elif args.scenario == "multi-turn":
             runs = await run_multi_turn(client, model, tokenizer, args)
+        else:
+            runs = await run_pressure_revisit(client, model, tokenizer, args)
 
     report = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -350,6 +391,7 @@ async def main() -> None:
         "model": model,
         "config": {
             **vars(args),
+            "request_count": len(runs),
             "markdown_out": str(args.markdown_out) if args.markdown_out else None,
             "json_out": str(args.json_out) if args.json_out else None,
         },
