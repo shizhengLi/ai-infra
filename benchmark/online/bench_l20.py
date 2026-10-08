@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-tp", type=int, default=4)
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
+    parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -143,11 +144,18 @@ def git_state() -> dict[str, Any]:
 
 def markdown_report(report: dict[str, Any]) -> str:
     config = report["config"]
+    table_header = (
+        "| C | Output tok/s | Stddev | Avg TTFT ms | P90 TTFT ms | Avg TPOT ms | "
+        "P90 TPOT ms | P99.9 TPOT ms | Max TPOT ms | P90 E2E s | GPU util % | Peak MiB |\n"
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: |"
+    )
     rows = []
     for aggregate in report["aggregates"]:
         rows.append(
-            "| {concurrency} | {throughput:.2f} | {throughput_std:.2f} | {ttft:.2f} | "
-            "{tpot:.2f} | {e2e:.3f} | {util:.2f} | {memory:.0f} |".format(**aggregate)
+            "| {concurrency} | {throughput:.2f} | {throughput_std:.2f} | {ttft_avg:.2f} | "
+            "{ttft:.2f} | {tpot_avg:.2f} | {tpot:.2f} | {tpot_p999:.2f} | "
+            "{tpot_max:.2f} | {e2e:.3f} | {util:.2f} | {memory:.0f} |".format(**aggregate)
         )
     return f"""# L20 online benchmark result
 
@@ -171,6 +179,7 @@ between the first `{config['output_len']}` token events and excludes the final O
 - Tensor parallelism: `{config['server_tp']}`
 - Memory ratio: `{config['server_memory_ratio']}`
 - CUDA Graph max batch: `{config['server_graph_max_bs']}`
+- Maximum prefill tokens: `{config['server_max_extend_tokens']}`
 - GPUs monitored: `{config['gpu_indices']}`
 
 ## Workload
@@ -182,8 +191,7 @@ between the first `{config['output_len']}` token events and excludes the final O
 
 ## Aggregate results
 
-| C | Output tok/s | Stddev | P90 TTFT ms | P90 TPOT ms | P90 E2E s | GPU util % | Peak MiB |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+{table_header}
 {chr(10).join(rows)}
 
 Per-repeat measurements and raw stream timestamps are stored in the machine-readable JSON result.
@@ -246,7 +254,9 @@ async def main() -> None:
                 "concurrency": concurrency,
                 "throughput": statistics.mean(throughputs),
                 "throughput_std": statistics.pstdev(throughputs),
+                "ttft_avg": statistics.mean(run["ttft_avg_ms"] for run in group),
                 "ttft": statistics.mean(run["ttft_p90_ms"] for run in group),
+                "tpot_avg": statistics.mean(run["tpot_avg_ms"] for run in group),
                 "tpot": statistics.mean(run["tpot_p90_ms"] for run in group),
                 "tpot_p999": statistics.mean(run["tpot_p999_ms"] for run in group),
                 "tpot_max": max(run["tpot_max_ms"] for run in group),
@@ -276,11 +286,18 @@ async def main() -> None:
             "server_tp": args.server_tp,
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
+            "server_max_extend_tokens": args.server_max_extend_tokens,
         },
         "runs": runs,
         "aggregates": aggregates,
     }
-    print(json.dumps(report, indent=2), flush=True)
+    console_report = {
+        "timestamp_utc": report["timestamp_utc"],
+        "model": report["model"],
+        "config": report["config"],
+        "aggregates": report["aggregates"],
+    }
+    print(json.dumps(console_report, indent=2), flush=True)
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(report, indent=2) + "\n")

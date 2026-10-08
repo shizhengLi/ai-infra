@@ -11,7 +11,8 @@
 | Attention backend sweep | Blocked | `sgl-kernel 0.3.21` incompatible with CUTLASS DSL 4.7.1 API |
 | KV/radix experiments | Planned | Requires instrumentation and larger-model workload |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
-| TP 2/4/8 | Planned | Qwen3-32B TP=4 startup verified; performance profiling pending |
+| Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
+| TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -25,5 +26,5 @@
 
 ## Next experiment
 
-Run experiment 006: increase `max_extend_tokens` from 8192 to 32768 at concurrency 32 and measure
-TTFT plus P99.9/max TPOT stalls. Then use the selected prefill budget for TP=2/4/8 scaling.
+Run experiment 008: add an open-loop mixed-arrival benchmark on TP=4, measure strict prefill-priority
+decode starvation, then evaluate bounded prefill/decode interleaving.
