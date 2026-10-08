@@ -103,6 +103,7 @@ class Engine:
             attn_backend=self.attn_backend,
             cuda_graph_bs=config.cuda_graph_bs,
             cuda_graph_max_bs=config.cuda_graph_max_bs,
+            max_running_req=config.max_running_req,
             free_memory=init_free_memory,
             max_seq_len=aligned_max_seq_len,
             vocab_size=config.model_config.vocab_size,

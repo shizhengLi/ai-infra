@@ -50,9 +50,10 @@ def _determine_cuda_graph_bs(
     cuda_graph_bs: List[int] | None,
     cuda_graph_max_bs: int | None,
     free_memory: int,
+    max_running_req: int,
 ) -> List[int]:
     if cuda_graph_bs is not None:
-        return cuda_graph_bs
+        return sorted({bs for bs in cuda_graph_bs if 0 < bs <= max_running_req})
 
     free_memory_gb = free_memory / (1 << 30)
     if cuda_graph_max_bs is None:
@@ -61,10 +62,15 @@ def _determine_cuda_graph_bs(
         else:
             cuda_graph_max_bs = 160
 
+    cuda_graph_max_bs = min(cuda_graph_max_bs, max_running_req)
     if cuda_graph_max_bs < 1:
         return []
 
-    return [1, 2, 4] + list(range(8, cuda_graph_max_bs + 1, 8))
+    graph_bs = [bs for bs in [1, 2, 4] if bs <= cuda_graph_max_bs]
+    graph_bs.extend(range(8, cuda_graph_max_bs + 1, 8))
+    if graph_bs[-1] != cuda_graph_max_bs:
+        graph_bs.append(cuda_graph_max_bs)
+    return graph_bs
 
 
 def mem_GB(size: int) -> str:
@@ -84,6 +90,7 @@ class GraphRunner:
         attn_backend: BaseAttnBackend,
         cuda_graph_bs: List[int] | None,
         cuda_graph_max_bs: int | None,
+        max_running_req: int,
         free_memory: int,
         max_seq_len: int,
         vocab_size: int,
@@ -93,6 +100,7 @@ class GraphRunner:
             cuda_graph_bs=cuda_graph_bs,
             cuda_graph_max_bs=cuda_graph_max_bs,
             free_memory=free_memory,
+            max_running_req=max_running_req,
         )
         self.attn_backend = attn_backend
         self.max_graph_bs = max(cuda_graph_bs) if cuda_graph_bs else 0
