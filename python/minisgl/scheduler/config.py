@@ -22,6 +22,7 @@ class SchedulerConfig(EngineConfig):
     prefill_telemetry_path: str | None = None
     cache_telemetry_path: str | None = None
     cache_type: str = "radix"
+    radix_partial_eviction: bool = False
     offline_mode: bool = False
 
     # networking config

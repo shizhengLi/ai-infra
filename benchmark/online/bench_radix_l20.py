@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=3000042)
     parser.add_argument("--server-tp", type=int, default=4)
     parser.add_argument("--server-num-pages", type=int, default=0)
+    parser.add_argument("--server-radix-partial-eviction", action="store_true")
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -325,6 +326,7 @@ def markdown_report(report: dict[str, Any]) -> str:
 - Timestamp: `{report['timestamp_utc']}`
 - Git revision: `{report['environment']['git_revision']}`
 - Tensor parallelism: `{report['config']['server_tp']}`
+- Partial-leaf eviction: `{report['config']['server_radix_partial_eviction']}`
 - Output length: `{report['config']['output_len']}` tokens
 - Seed: `{report['config']['seed']}`
 - Expected measured server UIDs: `1-{summary['requests']}` (`0` is warmup)

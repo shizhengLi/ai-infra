@@ -228,6 +228,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--radix-partial-eviction",
+        action="store_true",
+        default=ServerArgs.radix_partial_eviction,
+        help="Allow page-aligned tail eviction from unprotected radix leaf nodes.",
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

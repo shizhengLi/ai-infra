@@ -172,6 +172,7 @@ class CacheManager:
         type: str,
         *,
         telemetry_enabled: bool = False,
+        radix_partial_eviction: bool = False,
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -183,6 +184,9 @@ class CacheManager:
         self.page_table = page_table
         self.page_size = page_size
         self.telemetry = CacheTelemetry(enabled=telemetry_enabled)
+        if radix_partial_eviction and type != "radix":
+            raise ValueError("Partial-leaf eviction is only supported by the radix cache")
+        self.radix_partial_eviction = radix_partial_eviction
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -284,7 +288,10 @@ class CacheManager:
     def _allocate(self, needed_pages: int) -> torch.Tensor:
         if needed_pages > (free_pages := len(self.free_slots)):
             requested_tokens = (needed_pages - free_pages) * self.page_size
-            evicted = self.prefix_cache.evict(requested_tokens)
+            evicted = self.prefix_cache.evict(
+                requested_tokens,
+                partial=self.radix_partial_eviction,
+            )
             if self.telemetry.enabled:
                 self.telemetry.record_eviction(
                     requested_tokens=requested_tokens,

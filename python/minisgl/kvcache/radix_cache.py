@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Tuple, TypeAlias
 
 import torch
 from minisgl.core import get_global_ctx
-from minisgl.utils import align_down
+from minisgl.utils import align_down, div_ceil
 
 from .base import BaseCacheHandle, BasePrefixCache, InsertResult, MatchResult, SizeInfo
 
@@ -80,6 +80,16 @@ class RadixTreeNode:
 
         return new_node
 
+    def trim_tail(self, size: int) -> torch.Tensor:
+        assert self.ref_count == 0 and self.is_leaf() and not self.is_root()
+        assert 0 < size < self.length
+        retained_len = self.length - size
+        evicted_value = self._value[retained_len:]
+        retained_key = self._key[:retained_len].clone()
+        retained_value = self._value[:retained_len].clone()
+        self.set_key_value(retained_key, retained_value)
+        return evicted_value
+
     def __lt__(self, other: RadixTreeNode) -> bool:
         return self.timestamp < other.timestamp
 
@@ -145,7 +155,7 @@ class RadixPrefixCache(BasePrefixCache):
             node = new_node
         return InsertResult(prefix_len, RadixCacheHandle(insert_len, node))
 
-    def evict(self, size: int) -> torch.Tensor:
+    def evict(self, size: int, *, partial: bool = False) -> torch.Tensor:
         if size == 0:
             return self.empty_tensor
         assert (
@@ -163,6 +173,13 @@ class RadixPrefixCache(BasePrefixCache):
             ), f"Cannot evict enough cache, need {size}, only {evicted_size} evicted"
             node = heapq.heappop(leave_nodes)
             assert node.ref_count == 0 and node.is_leaf() and not node.is_root()
+            remaining_size = size - evicted_size
+            trim_size = div_ceil(remaining_size, self.page_size) * self.page_size
+            if partial and trim_size < node.length:
+                evicted_indices.append(node.trim_tail(trim_size))
+                evicted_size += trim_size
+                self.evictable_size -= trim_size
+                continue
             evicted_size += node.length
             evicted_indices.append(node.value)
             self.evictable_size -= node.length

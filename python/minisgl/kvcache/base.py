@@ -106,7 +106,7 @@ class BasePrefixCache(ABC):
         """
 
     @abstractmethod
-    def evict(self, size: int) -> torch.Tensor:
+    def evict(self, size: int, *, partial: bool = False) -> torch.Tensor:
         """
         Evict some prefixes from the cache to free up space.
         This operation will modify the cache.
@@ -114,6 +114,7 @@ class BasePrefixCache(ABC):
         Note that the actual evict size may be larger than the requested size.
         Args:
             size (int): The size to evict.
+            partial (bool): Whether the final evictable node may retain an aligned prefix.
 
         Returns:
             torch.Tensor: The indices evicted. Shape: (evict_size,)

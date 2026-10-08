@@ -70,6 +70,7 @@ class Scheduler(SchedulerIOMixin):
             self.engine.page_table,
             config.cache_type,
             telemetry_enabled=(self._is_primary_rank and config.cache_telemetry_path is not None),
+            radix_partial_eviction=config.radix_partial_eviction,
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(

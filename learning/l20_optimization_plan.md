@@ -85,8 +85,13 @@ load and regressed overload throughput by 1.14%.
   retained all 21/21 pooled useful probes and consistently evicted older C/D first, but whole-leaf
   eviction reclaimed 3.061x the requested pressure tokens. LRU replacement is rejected; compressed
   node granularity is the measured target.
-- The online-scheduling sequence is complete for this workload. Experiment 022 remains in Phase 2:
-  compare default-disabled, page-aligned partial-leaf tail eviction against experiment 021.
+- Experiment 022 implemented default-disabled, page-aligned partial-leaf tail eviction. Across three
+  fresh seeds it retained 21/21 hot probes, reduced pressure amplification from 3.061x to 1.000x,
+  lowered reclaimed tokens by 32.35%, and raised pooled D/C matched tokens from 18 to 1,048. Exact
+  trimming also caused 32 pressure eviction calls per run and increased hot TTFT by 16.23%, so the
+  primitive is accepted but not added to the deployment profile.
+- The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
+  023: amortize partial eviction using a small page reserve and recover the hot-prefix latency loss.
 
 ## Success criteria
 
