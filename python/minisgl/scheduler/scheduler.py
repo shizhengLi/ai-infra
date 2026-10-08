@@ -19,6 +19,7 @@ from .cache import CacheManager
 from .config import SchedulerConfig
 from .decode import DecodeManager
 from .io import SchedulerIOMixin
+from .policy import PrefillBudgetPolicy, PrefillSchedulePolicy
 from .prefill import ChunkedReq, PrefillManager
 from .table import TableManager
 
@@ -70,6 +71,11 @@ class Scheduler(SchedulerIOMixin):
         self.eos_token_id = self.tokenizer.eos_token_id
         self.token_pool = self.table_manager.token_pool
         self.prefill_budget = config.max_extend_tokens
+        self.prefill_budget_policy = PrefillBudgetPolicy(
+            default_budget=config.max_extend_tokens,
+            decode_active_budget=config.decode_active_prefill_tokens,
+        )
+        self.schedule_policy = PrefillSchedulePolicy(config.max_prefill_streak)
         # self.config = config
 
         # Initialize the I/O mixin
@@ -218,10 +224,21 @@ class Scheduler(SchedulerIOMixin):
 
     def _schedule_next_batch(self) -> ForwardInput | None:
         # TODO: support other policies: e.g. DECODE first
-        batch = (
-            self.prefill_manager.schedule_next_batch(self.prefill_budget)
-            or self.decode_manager.schedule_next_batch()
-        )
+        if self.schedule_policy.prefer_decode(
+            prefill_runnable=self.prefill_manager.runnable,
+            decode_runnable=self.decode_manager.runnable,
+        ):
+            batch = self.decode_manager.schedule_next_batch()
+        else:
+            prefill_budget = self.prefill_budget_policy.select(
+                decode_runnable=self.decode_manager.runnable
+            )
+            batch = (
+                self.prefill_manager.schedule_next_batch(prefill_budget)
+                or self.decode_manager.schedule_next_batch()
+            )
+        if batch is not None:
+            self.schedule_policy.update(is_prefill=batch.is_prefill)
         return self._prepare_batch(batch) if batch else None
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:

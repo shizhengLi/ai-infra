@@ -32,6 +32,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
     parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
+    parser.add_argument("--server-max-prefill-streak", type=int, default=0)
+    parser.add_argument("--server-decode-active-prefill-tokens", type=int, default=0)
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -180,6 +182,8 @@ between the first `{config['output_len']}` token events and excludes the final O
 - Memory ratio: `{config['server_memory_ratio']}`
 - CUDA Graph max batch: `{config['server_graph_max_bs']}`
 - Maximum prefill tokens: `{config['server_max_extend_tokens']}`
+- Maximum prefill streak: `{config['server_max_prefill_streak']}`
+- Decode-active prefill tokens: `{config['server_decode_active_prefill_tokens']}`
 - GPUs monitored: `{config['gpu_indices']}`
 
 ## Workload
@@ -287,6 +291,8 @@ async def main() -> None:
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
             "server_max_extend_tokens": args.server_max_extend_tokens,
+            "server_max_prefill_streak": args.server_max_prefill_streak,
+            "server_decode_active_prefill_tokens": args.server_decode_active_prefill_tokens,
         },
         "runs": runs,
         "aggregates": aggregates,

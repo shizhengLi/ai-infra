@@ -171,6 +171,27 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--max-prefill-streak",
+        type=int,
+        default=ServerArgs.max_prefill_streak,
+        help=(
+            "Maximum consecutive prefill batches while decode is runnable. "
+            "Zero preserves unlimited prefill priority."
+        ),
+    )
+
+    parser.add_argument(
+        "--decode-active-prefill-length",
+        type=int,
+        dest="decode_active_prefill_tokens",
+        default=ServerArgs.decode_active_prefill_tokens,
+        help=(
+            "Prefill token budget while decode is runnable. Zero reuses the normal prefill "
+            "length; a positive value must not exceed it."
+        ),
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,
