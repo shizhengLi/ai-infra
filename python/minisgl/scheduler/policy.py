@@ -68,6 +68,7 @@ class PrefillTelemetry:
     budget_limited_batches: int = 0
     max_pending_prefill_tokens: int = 0
     max_pending_prefill_requests: int = 0
+    batch_execution_samples: list[dict[str, int | float | bool]] = field(default_factory=list)
 
     def record_selection(self, budget: int, pending_tokens: int, pending_requests: int) -> None:
         self.budget_selections[budget] = self.budget_selections.get(budget, 0) + 1
@@ -79,7 +80,15 @@ class PrefillTelemetry:
         self.admitted_prefill_tokens += admitted_tokens
         self.budget_limited_batches += int(budget_limited)
 
-    def snapshot(self) -> dict[str, int | dict[str, int]]:
+    def record_execution(self, **sample: int | float | bool) -> None:
+        self.batch_execution_samples.append(sample)
+
+    def drain_execution_samples(self) -> None:
+        self.batch_execution_samples.clear()
+
+    def snapshot(
+        self,
+    ) -> dict[str, int | dict[str, int] | list[dict[str, int | float | bool]]]:
         return {
             "budget_selections": {
                 str(budget): count for budget, count in sorted(self.budget_selections.items())
@@ -89,4 +98,5 @@ class PrefillTelemetry:
             "budget_limited_batches": self.budget_limited_batches,
             "max_pending_prefill_tokens": self.max_pending_prefill_tokens,
             "max_pending_prefill_requests": self.max_pending_prefill_requests,
+            "batch_execution_samples": list(self.batch_execution_samples),
         }

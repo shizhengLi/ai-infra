@@ -126,6 +126,12 @@ def test_prefill_telemetry_tracks_budget_binding() -> None:
     telemetry.record_batch(admitted_tokens=3000, budget_limited=False)
     telemetry.record_selection(2048, pending_tokens=5000, pending_requests=5)
     telemetry.record_batch(admitted_tokens=2048, budget_limited=True)
+    telemetry.record_execution(
+        selected_budget=2048,
+        admitted_tokens=2048,
+        active_decode_requests=4,
+        execution_ms=612.5,
+    )
 
     assert telemetry.snapshot() == {
         "budget_selections": {"2048": 1, "4096": 1},
@@ -134,4 +140,15 @@ def test_prefill_telemetry_tracks_budget_binding() -> None:
         "budget_limited_batches": 1,
         "max_pending_prefill_tokens": 5000,
         "max_pending_prefill_requests": 5,
+        "batch_execution_samples": [
+            {
+                "selected_budget": 2048,
+                "admitted_tokens": 2048,
+                "active_decode_requests": 4,
+                "execution_ms": 612.5,
+            }
+        ],
     }
+
+    telemetry.drain_execution_samples()
+    assert telemetry.snapshot()["batch_execution_samples"] == []

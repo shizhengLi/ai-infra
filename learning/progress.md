@@ -19,6 +19,8 @@
 | Queue-adaptive prefill | Complete | 3 overload interventions restore 100% TPOT SLO with <0.01% throughput change |
 | Mixed-length pressure | Complete | Static 2048 alone reaches 100% TPOT SLO; adaptive threshold 4096 triggers too late |
 | Overload threshold 2048 | Complete | Restores 100% TPOT SLO but is behaviorally equivalent to static 2048 |
+| Prefill stall-time model | Complete | 99 samples fit `11.19 + 0.31529 * tokens` ms with R-squared 0.99973 |
+| Model-derived budget | Complete | 2304 keeps 100% TPOT SLO and improves average TTFT 6.10%/1.85% vs 2048 |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -32,4 +34,5 @@
 
 ## Next experiment
 
-Run experiment 014: instrument prefill batch execution time and calibrate an L20 stall-time model.
+Run experiment 016, the main experiment: compare the default, fairness-only, and final 2304-token
+profiles across the fixed representative load matrix.

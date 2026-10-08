@@ -56,6 +56,17 @@ multi-GPU throughput.
 - Report scaling efficiency and NCCL/PyNCCL time on the PCIe topology.
 - Optimize communication only after an Nsight Systems trace attributes the bottleneck.
 
+## Current execution point
+
+Experiments 000-015 have completed environment validation, baseline measurement, focused
+optimization, parameter exploration, and final parameter selection. Experiment 015 accepts a
+2304-token decode-active prefill budget for the declared one-second maximum-TPOT objective.
+
+- Experiment 016 is the main experiment: default versus fairness-only versus the final optimized
+  profile on Qwen3-32B TP=4, with at least three repetitions across the representative load matrix.
+- Experiment 017 is the follow-up ablation and robustness experiment.
+- No additional parameter sweep should delay experiment 016 unless a correctness failure appears.
+
 ## Success criteria
 
 - Performance claims use at least three comparable measurements and include variance.

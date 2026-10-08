@@ -88,6 +88,8 @@ class Scheduler(SchedulerIOMixin):
         )
         self._last_telemetry_prefill_batches = 0
         self._is_primary_rank = config.tp_info.is_primary()
+        self._prefill_batch_metadata: dict[int, dict[str, int | bool]] = {}
+        self._prefill_timing_events: dict[int, tuple[torch.cuda.Event, torch.cuda.Event]] = {}
         self.schedule_policy = PrefillSchedulePolicy(config.max_prefill_streak)
         # self.config = config
 
@@ -162,6 +164,7 @@ class Scheduler(SchedulerIOMixin):
 
         batch, (_, next_tokens_cpu, copy_done) = last_data[0].batch, last_data[1]
         copy_done.synchronize()
+        self._record_prefill_execution(batch)
         reply: List[DetokenizeMsg] = []
         new_finished_reqs: Set[Req] = set()
         with self.cache_manager.lazy_free_region():
@@ -245,6 +248,8 @@ class Scheduler(SchedulerIOMixin):
         ):
             batch = self.decode_manager.schedule_next_batch()
         else:
+            active_decode_requests = len(self.decode_manager.running_reqs)
+            pending_requests = len(self.prefill_manager.pending_list)
             pending_tokens = (
                 self.prefill_manager.pending_input_tokens if self.prefill_pressure_enabled else 0
             )
@@ -264,12 +269,26 @@ class Scheduler(SchedulerIOMixin):
             )
             if self.prefill_telemetry_enabled and batch is not None and batch.is_prefill:
                 admitted_tokens = sum(req.extend_len for req in batch.reqs)
+                budget_limited = admitted_tokens >= prefill_budget and self.prefill_manager.runnable
                 self.prefill_telemetry.record_batch(
                     admitted_tokens,
-                    budget_limited=(
-                        admitted_tokens >= prefill_budget and self.prefill_manager.runnable
-                    ),
+                    budget_limited=budget_limited,
                 )
+                if self._is_primary_rank:
+                    self._prefill_batch_metadata[id(batch)] = {
+                        "selected_budget": prefill_budget,
+                        "budget_limited": budget_limited,
+                        "pending_tokens": pending_tokens,
+                        "pending_requests": pending_requests,
+                        "admitted_tokens": admitted_tokens,
+                        "prefill_requests": len(batch.reqs),
+                        "chunked_requests": sum(
+                            isinstance(req, ChunkedReq) for req in batch.reqs
+                        ),
+                        "cached_tokens": sum(req.cached_len for req in batch.reqs),
+                        "max_sequence_tokens": max(req.device_len for req in batch.reqs),
+                        "active_decode_requests": active_decode_requests,
+                    }
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
         return self._prepare_batch(batch) if batch else None
@@ -288,15 +307,40 @@ class Scheduler(SchedulerIOMixin):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload) + "\n")
+        self.prefill_telemetry.drain_execution_samples()
         self._last_telemetry_prefill_batches = self.prefill_telemetry.prefill_batches
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input
+        timing_events = None
+        if self.prefill_telemetry_enabled and self._is_primary_rank and batch.is_prefill:
+            timing_events = (
+                torch.cuda.Event(enable_timing=True),
+                torch.cuda.Event(enable_timing=True),
+            )
+            timing_events[0].record(self.engine.stream)
         batch.input_ids = self.token_pool[input_mapping]
         forward_output = self.engine.forward_batch(batch, sample_args)
         self.token_pool[output_mapping] = forward_output.next_tokens_gpu
+        if timing_events is not None:
+            timing_events[1].record(self.engine.stream)
+            self._prefill_timing_events[id(batch)] = timing_events
         self.decode_manager.filter_reqs(forward_input.batch.reqs)
         return forward_output
+
+    def _record_prefill_execution(self, batch: Batch) -> None:
+        if not batch.is_prefill or not self._is_primary_rank:
+            return
+        metadata = self._prefill_batch_metadata.pop(id(batch), None)
+        timing_events = self._prefill_timing_events.pop(id(batch), None)
+        if metadata is None or timing_events is None:
+            return
+        start_event, end_event = timing_events
+        end_event.synchronize()
+        self.prefill_telemetry.record_execution(
+            **metadata,
+            execution_ms=start_event.elapsed_time(end_event),
+        )
 
 
 def _make_positions(batch: Batch, device: torch.device) -> torch.Tensor:
