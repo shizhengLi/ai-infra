@@ -51,6 +51,15 @@ def test_zero_decode_active_budget_reuses_default() -> None:
     assert policy.select(decode_runnable=True) == 8192
 
 
+def test_default_prefill_budget_must_be_positive() -> None:
+    try:
+        PrefillBudgetPolicy(default_budget=0)
+    except ValueError as exc:
+        assert "must be positive" in str(exc)
+    else:
+        raise AssertionError("non-positive default prefill budget was accepted")
+
+
 def test_decode_active_budget_cannot_exceed_default() -> None:
     try:
         PrefillBudgetPolicy(default_budget=8192, decode_active_budget=16384)
