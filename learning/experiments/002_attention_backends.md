@@ -63,10 +63,11 @@ work is deferred to a dedicated compatibility experiment.
 
 ## Decision
 
-Keep SM89 `auto` on `fi` for this environment. Do not change engine policy based on an unavailable
-backend, and do not claim a performance comparison.
+The compatibility issue was resolved in follow-up experiment 002a. The completed sweep showed that
+`fa,fi` is effectively tied with `fi` for this workload while pure `fa` is 15.00% slower. Keep SM89
+`auto` on `fi`; this is now a measured performance decision rather than a dependency workaround.
 
 ## Next step
 
-Quantify CUDA Graph value independently, then repair and pin a compatible FlashAttention stack in a
-separate experiment.
+See `002a_attention_backend_compatibility.md` for the scoped compatibility implementation, tests,
+and completed backend sweep. The main roadmap continues with experiment 017.

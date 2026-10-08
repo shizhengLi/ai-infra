@@ -1,17 +1,63 @@
 from __future__ import annotations
 
+import importlib
+import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Tuple
+from functools import lru_cache
+from types import ModuleType
+from typing import TYPE_CHECKING, Callable, List, Tuple
 
 import torch
 from minisgl.core import Batch, get_global_ctx
-from minisgl.utils import is_sm100_supported
+from minisgl.utils import init_logger, is_sm100_supported
 
 from .base import BaseAttnBackend, BaseAttnMetadata
 from .utils import BaseCaptureData
 
 if TYPE_CHECKING:
     from minisgl.models import ModelConfig
+
+logger = init_logger(__name__)
+
+
+def _is_cutlass_fa4_api_mismatch(exc: AttributeError) -> bool:
+    message = str(exc)
+    return "cutlass._mlir.dialects.nvvm" in message and "RoundingModeKind" in message
+
+
+def _import_fa3_without_optional_fa4() -> ModuleType:
+    """Import FA3 while hiding an incompatible optional FA4 implementation."""
+    fa4_module_name = "sgl_kernel._fa4_interface"
+    flash_attn_module_name = "sgl_kernel.flash_attn"
+    missing = object()
+    previous_fa4_module = sys.modules.get(fa4_module_name, missing)
+
+    fa4_stub = ModuleType(fa4_module_name)
+    fa4_stub.flash_attn_varlen_func = None  # type: ignore[attr-defined]
+    sys.modules[fa4_module_name] = fa4_stub
+    sys.modules.pop(flash_attn_module_name, None)
+    try:
+        return importlib.import_module(flash_attn_module_name)
+    finally:
+        if previous_fa4_module is missing:
+            sys.modules.pop(fa4_module_name, None)
+        else:
+            sys.modules[fa4_module_name] = previous_fa4_module  # type: ignore[assignment]
+
+
+@lru_cache(maxsize=2)
+def _load_flash_attn_with_kvcache(version: int) -> Callable[..., torch.Tensor]:
+    try:
+        module = importlib.import_module("sgl_kernel.flash_attn")
+    except AttributeError as exc:
+        if version != 3 or not _is_cutlass_fa4_api_mismatch(exc):
+            raise
+        logger.warning(
+            "sgl-kernel's optional FA4 module is incompatible with the installed CUTLASS DSL; "
+            "loading the FA3 kernels required by this GPU without FA4"
+        )
+        module = _import_fa3_without_optional_fa4()
+    return module.flash_attn_with_kvcache  # type: ignore[no-any-return]
 
 
 @dataclass
@@ -155,7 +201,7 @@ def _fa_sgl_impl(
     causal: bool = True,
 ) -> torch.Tensor:
     try:
-        from sgl_kernel.flash_attn import flash_attn_with_kvcache
+        flash_attn_with_kvcache = _load_flash_attn_with_kvcache(version)
     except ImportError as e:
         raise ImportError(
             "sgl_kernel.flash_attn is not found. Please install it with `pip install sgl-kernel`.\n"

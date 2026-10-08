@@ -64,6 +64,8 @@ evaluation. The active-only 2304-token candidate improved the global maximum TPO
 1.34 seconds and satisfied 286 of 288 requests, but failed the strict acceptance criteria at light
 load and regressed overload throughput by 1.14%.
 
+- Follow-up experiment 002a removed the FA3/CUTLASS compatibility blocker and completed the L20
+  backend sweep. `fi` remains the default based on measurement rather than backend availability.
 - Experiment 016 is the completed main experiment; its failed criteria are retained as results.
 - Experiment 017 is a targeted failure analysis and corrective robustness experiment, not an
   unconstrained parameter sweep.

@@ -8,7 +8,7 @@
 | Reproducible harness | Complete | Deterministic workload; Markdown/JSON output; 3-run statistics |
 | CUDA Graph sizing | Complete | 23 -> 19 graphs; initialization 8.3615 -> 7.3553 s |
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
-| Attention backend sweep | Blocked | `sgl-kernel 0.3.21` incompatible with CUTLASS DSL 4.7.1 API |
+| Attention backend sweep | Complete | FA3 compatibility restored; `fa,fi` -0.17%, pure `fa` -15.00% vs `fi` median |
 | KV/radix experiments | Planned | Requires instrumentation and larger-model workload |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
@@ -32,6 +32,8 @@
 - Keep generated benchmark facts separate from interpretation notes.
 - Do not accept parameter sweeps as source optimizations unless they lead to a robust automatic
   policy or a documented deployment profile.
+- Keep SM89 automatic attention on `fi`: the repaired `fa,fi` path is effectively tied and pure
+  `fa` is 15.00% slower on the fixed 256-input/128-output workload.
 
 ## Next experiment
 

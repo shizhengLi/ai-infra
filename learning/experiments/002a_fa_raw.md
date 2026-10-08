@@ -1,0 +1,55 @@
+# L20 offline benchmark
+
+## Purpose
+
+Measure end-to-end offline decode throughput with deterministic, non-shared-prefix inputs. Each
+repeat uses a different seed so the radix cache cannot turn later repeats into prefix-cache tests.
+
+## Principle
+
+The workload keeps input and requested output lengths fixed. `ignore_eos=True` guarantees the same
+number of generated tokens in every run. Initialization time is reported separately because CUDA
+Graph capture and kernel JIT affect startup but not steady-state throughput.
+
+## Environment
+
+- Timestamp (UTC): `2026-10-08T11:16:34.670649+00:00`
+- Git revision: `6d757c7`
+- Git worktree dirty: `True`
+- Tracked diff SHA-256: `67d96f3f384a`
+- GPU: `NVIDIA L20` (SM `8.9`)
+- GPU memory: `44.39 GiB`
+- Python: `3.12.14`
+- PyTorch: `2.9.1+cu128`
+- PyTorch CUDA: `12.8`
+
+## Configuration
+
+- Model: `/data2/lszlsz/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca`
+- Attention backend: `fa`
+- Requests: `128`
+- Input/output tokens per request: `256/128`
+- Repeats: `3`
+- Max running requests: `128`
+- CUDA Graph max batch size: `128`
+- Resolved CUDA Graph sizes: `[1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128]`
+- Memory ratio: `0.8`
+- Page size/cache: `1` / `radix`
+
+## Results
+
+- Engine initialization: **4.6128 s**
+- Mean throughput: **8624.67 token/s**
+- Median throughput: **8626.22 token/s**
+- Population standard deviation: **5.27 token/s**
+
+| Repeat | Duration (s) | Throughput (token/s) |
+| ---: | ---: | ---: |
+| 1 | 1.9012 | 8617.58 |
+| 2 | 1.8993 | 8626.22 |
+| 3 | 1.8985 | 8630.20 |
+
+## Conclusion
+
+This file records raw benchmark facts. Interpret the comparison and next action in
+`learning/progress.md` and the corresponding numbered experiment note.
