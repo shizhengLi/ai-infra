@@ -21,6 +21,7 @@
 | Overload threshold 2048 | Complete | Restores 100% TPOT SLO but is behaviorally equivalent to static 2048 |
 | Prefill stall-time model | Complete | 99 samples fit `11.19 + 0.31529 * tokens` ms with R-squared 0.99973 |
 | Model-derived budget | Complete | 2304 keeps 100% TPOT SLO and improves average TTFT 6.10%/1.85% vs 2048 |
+| Main scheduling experiment | Complete, criteria failed | 286/288 SLO passes; max TPOT 13.32s -> 1.34s, but light-load SLO and 2.5 req/s throughput criteria fail |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -34,5 +35,5 @@
 
 ## Next experiment
 
-Run experiment 016, the main experiment: compare the default, fairness-only, and final 2304-token
-profiles across the fixed representative load matrix.
+Run experiment 017: reproduce the held-out light-load failure with telemetry, then validate whether
+a globally bounded 2304-token prefill budget closes the SLO gap without unacceptable overload cost.

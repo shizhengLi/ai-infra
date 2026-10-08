@@ -58,14 +58,16 @@ multi-GPU throughput.
 
 ## Current execution point
 
-Experiments 000-015 have completed environment validation, baseline measurement, focused
-optimization, parameter exploration, and final parameter selection. Experiment 015 accepts a
-2304-token decode-active prefill budget for the declared one-second maximum-TPOT objective.
+Experiments 000-015 completed environment validation, baseline measurement, focused optimization,
+parameter exploration, and candidate selection. Experiment 016 completed the main held-out
+evaluation. The active-only 2304-token candidate improved the global maximum TPOT from 13.32 to
+1.34 seconds and satisfied 286 of 288 requests, but failed the strict acceptance criteria at light
+load and regressed overload throughput by 1.14%.
 
-- Experiment 016 is the main experiment: default versus fairness-only versus the final optimized
-  profile on Qwen3-32B TP=4, with at least three repetitions across the representative load matrix.
-- Experiment 017 is the follow-up ablation and robustness experiment.
-- No additional parameter sweep should delay experiment 016 unless a correctness failure appears.
+- Experiment 016 is the completed main experiment; its failed criteria are retained as results.
+- Experiment 017 is a targeted failure analysis and corrective robustness experiment, not an
+  unconstrained parameter sweep.
+- A final strict-SLO claim requires a new held-out validation after the failure mechanism is fixed.
 
 ## Success criteria
 
