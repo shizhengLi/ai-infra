@@ -192,6 +192,27 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--decode-overload-prefill-length",
+        type=int,
+        dest="decode_overload_prefill_tokens",
+        default=ServerArgs.decode_overload_prefill_tokens,
+        help="Prefill token budget used when decode is runnable and queue pressure is high.",
+    )
+
+    parser.add_argument(
+        "--decode-overload-prefill-threshold",
+        type=int,
+        default=ServerArgs.decode_overload_prefill_threshold,
+        help="Pending prefill tokens required to activate the decode-overload budget.",
+    )
+
+    parser.add_argument(
+        "--prefill-telemetry-path",
+        default=ServerArgs.prefill_telemetry_path,
+        help="Optional JSONL path for cumulative prefill scheduling telemetry.",
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

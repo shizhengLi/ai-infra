@@ -15,7 +15,10 @@ def _get_pid_suffix() -> str:
 class SchedulerConfig(EngineConfig):
     max_extend_tokens: int = 8192
     decode_active_prefill_tokens: int = 0
+    decode_overload_prefill_tokens: int = 0
+    decode_overload_prefill_threshold: int = 0
     max_prefill_streak: int = 0
+    prefill_telemetry_path: str | None = None
     cache_type: str = "radix"
     offline_mode: bool = False
 

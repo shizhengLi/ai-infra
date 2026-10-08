@@ -160,3 +160,10 @@ class PrefillManager:
     @property
     def runnable(self) -> bool:
         return len(self.pending_list) > 0
+
+    @property
+    def pending_input_tokens(self) -> int:
+        return sum(
+            req.input_len - (req.chunked_req.cached_len if req.chunked_req is not None else 0)
+            for req in self.pending_list
+        )

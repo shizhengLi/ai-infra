@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, List, NamedTuple, NoReturn, Set, Tuple, TypeAlias
 
 import torch
@@ -19,7 +22,7 @@ from .cache import CacheManager
 from .config import SchedulerConfig
 from .decode import DecodeManager
 from .io import SchedulerIOMixin
-from .policy import PrefillBudgetPolicy, PrefillSchedulePolicy
+from .policy import PrefillBudgetPolicy, PrefillSchedulePolicy, PrefillTelemetry
 from .prefill import ChunkedReq, PrefillManager
 from .table import TableManager
 
@@ -74,7 +77,17 @@ class Scheduler(SchedulerIOMixin):
         self.prefill_budget_policy = PrefillBudgetPolicy(
             default_budget=config.max_extend_tokens,
             decode_active_budget=config.decode_active_prefill_tokens,
+            decode_overload_budget=config.decode_overload_prefill_tokens,
+            decode_overload_threshold=config.decode_overload_prefill_threshold,
         )
+        self.prefill_telemetry = PrefillTelemetry()
+        self.prefill_telemetry_path = config.prefill_telemetry_path
+        self.prefill_telemetry_enabled = config.prefill_telemetry_path is not None
+        self.prefill_pressure_enabled = (
+            config.decode_overload_prefill_tokens > 0 or self.prefill_telemetry_enabled
+        )
+        self._last_telemetry_prefill_batches = 0
+        self._is_primary_rank = config.tp_info.is_primary()
         self.schedule_policy = PrefillSchedulePolicy(config.max_prefill_streak)
         # self.config = config
 
@@ -84,6 +97,7 @@ class Scheduler(SchedulerIOMixin):
     def run_when_idle(self) -> None:
         """Called when the scheduler is idle to perform background tasks."""
         logger.info_rank0("Scheduler is idle, waiting for new reqs...")
+        self._flush_prefill_telemetry("idle")
         self.cache_manager.check_integrity()
 
     def overlap_loop(self, last_data: ForwardData | None) -> ForwardData | None:
@@ -137,6 +151,7 @@ class Scheduler(SchedulerIOMixin):
                 data = self.overlap_loop(data)
 
     def shutdown(self) -> None:
+        self._flush_prefill_telemetry("shutdown")
         torch.cuda.synchronize(self.device)
         self.sync_all_ranks()
         self.engine.shutdown()
@@ -230,16 +245,50 @@ class Scheduler(SchedulerIOMixin):
         ):
             batch = self.decode_manager.schedule_next_batch()
         else:
-            prefill_budget = self.prefill_budget_policy.select(
-                decode_runnable=self.decode_manager.runnable
+            pending_tokens = (
+                self.prefill_manager.pending_input_tokens if self.prefill_pressure_enabled else 0
             )
+            prefill_budget = self.prefill_budget_policy.select(
+                decode_runnable=self.decode_manager.runnable,
+                pending_prefill_tokens=pending_tokens,
+            )
+            if self.prefill_telemetry_enabled and self.prefill_manager.runnable:
+                self.prefill_telemetry.record_selection(
+                    prefill_budget,
+                    pending_tokens,
+                    len(self.prefill_manager.pending_list),
+                )
             batch = (
                 self.prefill_manager.schedule_next_batch(prefill_budget)
                 or self.decode_manager.schedule_next_batch()
             )
+            if self.prefill_telemetry_enabled and batch is not None and batch.is_prefill:
+                admitted_tokens = sum(req.extend_len for req in batch.reqs)
+                self.prefill_telemetry.record_batch(
+                    admitted_tokens,
+                    budget_limited=(
+                        admitted_tokens >= prefill_budget and self.prefill_manager.runnable
+                    ),
+                )
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
         return self._prepare_batch(batch) if batch else None
+
+    def _flush_prefill_telemetry(self, reason: str) -> None:
+        if not self._is_primary_rank or self.prefill_telemetry_path is None:
+            return
+        if self.prefill_telemetry.prefill_batches == self._last_telemetry_prefill_batches:
+            return
+        payload = {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            **self.prefill_telemetry.snapshot(),
+        }
+        path = Path(self.prefill_telemetry_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload) + "\n")
+        self._last_telemetry_prefill_batches = self.prefill_telemetry.prefill_batches
 
     def _forward(self, forward_input: ForwardInput) -> ForwardOutput:
         batch, sample_args, input_mapping, output_mapping = forward_input

@@ -16,6 +16,7 @@
 | Scheduling fairness | Complete | Prefill streak 1 cuts worst decode stall 62% at 0.13% throughput cost |
 | Adaptive prefill | Complete | Active budget 4096 halves worst TPOT with no measured throughput loss |
 | Poisson budget sweep | Complete | 2048 reaches 100% TPOT SLO at 2.5 req/s with 0.12% throughput cost |
+| Queue-adaptive prefill | Complete | 3 overload interventions restore 100% TPOT SLO with <0.01% throughput change |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -29,5 +30,5 @@
 
 ## Next experiment
 
-Run experiment 011: instrument prefill budget-binding frequency and use queue pressure to select
-4096 normally and 2048 only during overload.
+Run experiment 012: validate token-pressure switching on a longer trace with mixed
+256/1024/4096-token prompts.
