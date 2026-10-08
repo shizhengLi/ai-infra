@@ -90,8 +90,12 @@ load and regressed overload throughput by 1.14%.
   lowered reclaimed tokens by 32.35%, and raised pooled D/C matched tokens from 18 to 1,048. Exact
   trimming also caused 32 pressure eviction calls per run and increased hot TTFT by 16.23%, so the
   primitive is accepted but not added to the deployment profile.
+- Experiment 023 screened 16/32/64-page eviction reserves and selected 16 pages by the pre-registered
+  rule. Across three seeds it reduced pressure calls from 32 to 2, kept reclamation within 0.13% of
+  exact trimming, retained 21/21 hot probes, and limited hot TTFT to +3.47% versus whole-leaf
+  control. Reserve 16 is accepted only for the fixed 16-output-token experiment profile.
 - The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  023: amortize partial eviction using a small page reserve and recover the hot-prefix latency loss.
+  024: validate fixed and adaptive reserves across variable output lengths before broadening scope.
 
 ## Success criteria
 

@@ -152,3 +152,91 @@ def test_partial_eviction_rejects_non_radix_cache() -> None:
             type="naive",
             radix_partial_eviction=True,
         )
+
+
+def make_reserve_manager(
+    *,
+    num_pages: int,
+    page_size: int = 1,
+    reserve_pages: int,
+    telemetry_enabled: bool = False,
+) -> CacheManager:
+    core.set_global_ctx(core.Context(page_size=page_size))
+    return CacheManager(
+        num_pages,
+        page_size,
+        torch.empty((1, num_pages * page_size), dtype=torch.int32),
+        type="radix",
+        telemetry_enabled=telemetry_enabled,
+        radix_partial_eviction=True,
+        radix_partial_eviction_reserve_pages=reserve_pages,
+    )
+
+
+def seed_full_cache(manager: CacheManager) -> torch.Tensor:
+    pages = manager._allocate(manager.num_pages)
+    tokens = torch.arange(manager.num_pages * manager.page_size, dtype=torch.int32)
+    manager.prefix_cache.insert_prefix(tokens, manager._page_to_token(pages))
+    return tokens
+
+
+def test_partial_eviction_reserve_leaves_free_pages_and_records_target() -> None:
+    manager = make_reserve_manager(
+        num_pages=8,
+        reserve_pages=2,
+        telemetry_enabled=True,
+    )
+    tokens = seed_full_cache(manager)
+
+    manager._allocate(1)
+
+    snapshot = manager.telemetry.snapshot()
+    assert len(manager.free_slots) == 2
+    assert manager.prefix_cache.match_prefix(tokens).cuda_handle.cached_len == 5
+    assert snapshot["eviction_requested_tokens"] == 1
+    assert snapshot["eviction_target_tokens"] == 3
+    assert snapshot["evicted_tokens"] == 3
+    assert snapshot["operation_samples"][-1]["target_tokens"] == 3
+
+
+def test_partial_eviction_reserve_is_capped_by_evictable_pages() -> None:
+    manager = make_reserve_manager(num_pages=4, reserve_pages=4)
+    allocated = manager._allocate(manager.num_pages)
+    tokens = torch.arange(2, dtype=torch.int32)
+    manager.prefix_cache.insert_prefix(tokens, allocated[:2])
+
+    reclaimed = manager._allocate(1)
+
+    assert len(reclaimed) == 1
+    assert len(manager.free_slots) == 1
+    assert manager.prefix_cache.size_info.evictable_size == 0
+
+
+def test_partial_eviction_reserve_respects_page_alignment() -> None:
+    manager = make_reserve_manager(num_pages=4, page_size=4, reserve_pages=2)
+    tokens = seed_full_cache(manager)
+
+    allocated = manager._allocate(1)
+
+    assert len(manager.free_slots) == 2
+    assert torch.all(manager.free_slots % manager.page_size == 0)
+    assert allocated.item() % manager.page_size == 0
+    assert manager.prefix_cache.match_prefix(tokens).cuda_handle.cached_len == 4
+    manager._free(manager._page_to_token(allocated))
+    manager.check_integrity()
+
+
+@pytest.mark.parametrize("reserve_pages", [-1, 1])
+def test_partial_eviction_reserve_requires_valid_partial_mode(reserve_pages: int) -> None:
+    core.set_global_ctx(core.Context(page_size=1))
+    match = "non-negative" if reserve_pages < 0 else "requires partial-leaf eviction"
+
+    with pytest.raises(ValueError, match=match):
+        CacheManager(
+            4,
+            1,
+            torch.empty((1, 4), dtype=torch.int32),
+            type="radix",
+            radix_partial_eviction=False,
+            radix_partial_eviction_reserve_pages=reserve_pages,
+        )

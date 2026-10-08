@@ -119,6 +119,7 @@ def test_cache_telemetry_classifies_hits_and_tracks_tokens() -> None:
     assert snapshot["full_hit_requests"] == 1
     assert snapshot["inserted_tokens"] == 2
     assert snapshot["eviction_requested_tokens"] == 3
+    assert snapshot["eviction_target_tokens"] == 3
     assert snapshot["evicted_tokens"] == 5
     assert snapshot["max_resident_tokens"] == 12
     assert len(snapshot["operation_samples"]) == 5
@@ -164,4 +165,5 @@ def test_cache_manager_records_actual_eviction_size() -> None:
     snapshot = manager.telemetry.snapshot()
     assert snapshot["eviction_calls"] == 1
     assert snapshot["eviction_requested_tokens"] == 1
+    assert snapshot["eviction_target_tokens"] == 1
     assert snapshot["evicted_tokens"] == 2

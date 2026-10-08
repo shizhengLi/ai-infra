@@ -235,6 +235,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--radix-partial-eviction-reserve-pages",
+        type=int,
+        default=ServerArgs.radix_partial_eviction_reserve_pages,
+        help="Extra pages to reclaim per partial eviction to amortize later allocations.",
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

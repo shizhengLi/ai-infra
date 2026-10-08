@@ -29,6 +29,7 @@ class CacheTelemetry:
     inserted_tokens: int = 0
     eviction_calls: int = 0
     eviction_requested_tokens: int = 0
+    eviction_target_tokens: int = 0
     evicted_tokens: int = 0
     current_evictable_tokens: int = 0
     current_protected_tokens: int = 0
@@ -112,22 +113,26 @@ class CacheTelemetry:
         self,
         *,
         requested_tokens: int,
+        target_tokens: int | None = None,
         evicted_tokens: int,
         size_info: SizeInfo,
     ) -> None:
         if not self.enabled:
             return
+        target_tokens = target_tokens if target_tokens is not None else requested_tokens
         assert requested_tokens > 0
-        assert evicted_tokens >= requested_tokens
+        assert evicted_tokens >= target_tokens >= requested_tokens
         self.operations += 1
         self.eviction_calls += 1
         self.eviction_requested_tokens += requested_tokens
+        self.eviction_target_tokens += target_tokens
         self.evicted_tokens += evicted_tokens
         self._update_size(size_info)
         self.operation_samples.append(
             {
                 "event": "evict",
                 "requested_tokens": requested_tokens,
+                "target_tokens": target_tokens,
                 "evicted_tokens": evicted_tokens,
                 "resident_tokens": size_info.total_size,
             }
@@ -152,6 +157,7 @@ class CacheTelemetry:
             "inserted_tokens": self.inserted_tokens,
             "eviction_calls": self.eviction_calls,
             "eviction_requested_tokens": self.eviction_requested_tokens,
+            "eviction_target_tokens": self.eviction_target_tokens,
             "evicted_tokens": self.evicted_tokens,
             "current_evictable_tokens": self.current_evictable_tokens,
             "current_protected_tokens": self.current_protected_tokens,
@@ -173,6 +179,7 @@ class CacheManager:
         *,
         telemetry_enabled: bool = False,
         radix_partial_eviction: bool = False,
+        radix_partial_eviction_reserve_pages: int = 0,
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -186,7 +193,12 @@ class CacheManager:
         self.telemetry = CacheTelemetry(enabled=telemetry_enabled)
         if radix_partial_eviction and type != "radix":
             raise ValueError("Partial-leaf eviction is only supported by the radix cache")
+        if radix_partial_eviction_reserve_pages < 0:
+            raise ValueError("Partial-eviction reserve pages must be non-negative")
+        if radix_partial_eviction_reserve_pages > 0 and not radix_partial_eviction:
+            raise ValueError("Partial-eviction reserve requires partial-leaf eviction")
         self.radix_partial_eviction = radix_partial_eviction
+        self.radix_partial_eviction_reserve_pages = radix_partial_eviction_reserve_pages
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
@@ -288,13 +300,24 @@ class CacheManager:
     def _allocate(self, needed_pages: int) -> torch.Tensor:
         if needed_pages > (free_pages := len(self.free_slots)):
             requested_tokens = (needed_pages - free_pages) * self.page_size
+            reserve_tokens = self.radix_partial_eviction_reserve_pages * self.page_size
+            evictable_tokens = self.prefix_cache.size_info.evictable_size
+            assert requested_tokens <= evictable_tokens, (
+                f"Cannot satisfy {requested_tokens} cache tokens with only "
+                f"{evictable_tokens} evictable"
+            )
+            target_tokens = min(
+                requested_tokens + reserve_tokens,
+                evictable_tokens,
+            )
             evicted = self.prefix_cache.evict(
-                requested_tokens,
+                target_tokens,
                 partial=self.radix_partial_eviction,
             )
             if self.telemetry.enabled:
                 self.telemetry.record_eviction(
                     requested_tokens=requested_tokens,
+                    target_tokens=target_tokens,
                     evicted_tokens=len(evicted),
                     size_info=self.prefix_cache.size_info,
                 )

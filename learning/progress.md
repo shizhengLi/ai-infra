@@ -9,7 +9,7 @@
 | CUDA Graph sizing | Complete | 23 -> 19 graphs; initialization 8.3615 -> 7.3553 s |
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
 | Attention backend sweep | Complete | FA3 compatibility restored; `fa,fi` -0.17%, pure `fa` -15.00% vs `fi` median |
-| KV/radix experiments | Partial eviction complete | Amplification 3.061x -> 1.000x; reclaimed tokens -32.35%; hot TTFT +16.23% |
+| KV/radix experiments | Reserve experiment complete | Reserve 16 cuts pressure calls 32 -> 2; hot TTFT is within +3.47% of whole-leaf control |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
 | TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
@@ -50,9 +50,12 @@
   experiment 022 rules: 21/21 hot survivors, 1.000x amplification, 32.35% less pressure reclamation,
   and pooled D/C matches increasing from 18 to 1,048 tokens. Do not recommend it for deployment yet:
   exact trimming caused 32 pressure eviction calls per repetition and regressed hot TTFT by 16.23%.
+- For the fixed Qwen3-32B TP=4, 4096-page, 16-output-token profile, pair partial eviction with a
+  16-page reserve. Experiment 023 reduced pressure calls from 32 to 2, kept target overshoot at
+  1.000x, retained 21/21 hot probes and 348.3/519 mean D tokens, and limited hot TTFT change to
+  +3.47% versus whole-leaf control. Keep both defaults disabled until variable-length validation.
 
 ## Next experiment
 
-Run experiment 023: add bounded eviction headroom to partial-leaf trimming and compare 16/32/64-page
-reserves against experiments 021-022. The target is to retain most of D's partial prefix while
-reducing pressure eviction calls from 32 to about two and restoring hot TTFT.
+Run experiment 024: test fixed reserve 16 across output lengths 16/64/128 and mixed sequential
+lengths, then compare it with a bounded adaptive reserve based on expected near-term allocation.
