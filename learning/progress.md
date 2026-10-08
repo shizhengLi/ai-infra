@@ -11,7 +11,8 @@
 | Attention backend sweep | Blocked | `sgl-kernel 0.3.21` incompatible with CUTLASS DSL 4.7.1 API |
 | KV/radix experiments | Planned | Requires instrumentation and larger-model workload |
 | Online serving | Planned | TTFT/TPOT/percentile workload |
-| TP 2/4/8 | Planned | Requires topology and communication profiling |
+| TP 2/4/8 | Planned | Qwen3-32B TP=4 startup verified; performance profiling pending |
+| PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
 
@@ -24,5 +25,6 @@
 
 ## Next experiment
 
-Add online benchmark automation for TTFT/TPOT and changing batch sizes. Repair the FlashAttention
-dependency stack separately so package changes do not contaminate the graph measurements.
+Measure Qwen3-32B TP=1/2/4/8 communication scaling, then add online benchmark automation for
+TTFT/TPOT and changing batch sizes. Repair FlashAttention separately so package changes do not
+contaminate graph or communication measurements.

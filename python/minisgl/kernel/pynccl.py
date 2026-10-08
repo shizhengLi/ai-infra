@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import functools
+import os
+from importlib.util import find_spec
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from minisgl.env import ENV
@@ -26,8 +29,38 @@ else:
 
 
 @functools.cache
+def _find_nccl_library() -> Path | None:
+    search_dirs: list[Path] = []
+
+    for env_name in ("NCCL_HOME", "NCCL_ROOT"):
+        if root := os.environ.get(env_name):
+            search_dirs.extend([Path(root) / "lib", Path(root) / "lib64"])
+
+    if spec := find_spec("nvidia.nccl"):
+        for root in spec.submodule_search_locations or []:
+            search_dirs.append(Path(root) / "lib")
+
+    for root in os.environ.get("LD_LIBRARY_PATH", "").split(os.pathsep):
+        if root:
+            search_dirs.append(Path(root))
+
+    for directory in search_dirs:
+        for name in ("libnccl.so", "libnccl.so.2"):
+            library = directory / name
+            if library.is_file():
+                return library.resolve()
+    return None
+
+
+def _nccl_linker_flags() -> list[str]:
+    if library := _find_nccl_library():
+        return [str(library), f"-Wl,-rpath,{library.parent}"]
+    return ["-lnccl"]
+
+
+@functools.cache
 def _load_nccl_module() -> Module:
-    return load_aot("pynccl", cuda_files=["pynccl.cu"], extra_ldflags=["-lnccl"])
+    return load_aot("pynccl", cuda_files=["pynccl.cu"], extra_ldflags=_nccl_linker_flags())
 
 
 @functools.cache
