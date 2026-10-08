@@ -10,7 +10,7 @@
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
 | Attention backend sweep | Blocked | `sgl-kernel 0.3.21` incompatible with CUTLASS DSL 4.7.1 API |
 | KV/radix experiments | Planned | Requires instrumentation and larger-model workload |
-| Online serving | Planned | TTFT/TPOT/percentile workload |
+| Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | TP 2/4/8 | Planned | Qwen3-32B TP=4 startup verified; performance profiling pending |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
@@ -25,6 +25,5 @@
 
 ## Next experiment
 
-Measure Qwen3-32B TP=1/2/4/8 communication scaling, then add online benchmark automation for
-TTFT/TPOT and changing batch sizes. Repair FlashAttention separately so package changes do not
-contaminate graph or communication measurements.
+Run experiment 006: increase `max_extend_tokens` from 8192 to 32768 at concurrency 32 and measure
+TTFT plus P99.9/max TPOT stalls. Then use the selected prefill budget for TP=2/4/8 scaling.
