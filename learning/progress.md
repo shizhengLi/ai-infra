@@ -23,7 +23,7 @@
 | Model-derived budget | Complete | 2304 keeps 100% TPOT SLO and improves average TTFT 6.10%/1.85% vs 2048 |
 | Main scheduling experiment | Complete, criteria failed | 286/288 SLO passes; max TPOT 13.32s -> 1.34s, but light-load SLO and 2.5 req/s throughput criteria fail |
 | Global prefill bound | Complete, rejected | Reproduces 1.34s gap under 2304 active budget; global 2304 does not improve 70/72 light-load SLO |
-| Decode response visibility | Complete, candidate accepted | Result-before-prefill cuts max TPOT 1.34s -> 0.78s; 144/144 boundary requests pass at 0.060% overload throughput cost |
+| Decode response visibility | Complete, accepted | Fresh held-out matrix passes 288/288 requests; max TPOT 1.12s -> 0.79s with at most 0.125% per-rate throughput cost |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 
 ## Decisions
@@ -36,12 +36,13 @@
   policy or a documented deployment profile.
 - Keep SM89 automatic attention on `fi`: the repaired `fa,fi` path is effectively tied and pure
   `fa` is 15.00% slower on the fixed 256-input/128-output workload.
-- Keep `--decode-result-before-prefill` opt-in until a fresh held-out matrix confirms experiment
-  018's 144/144 TPOT result. The paired boundary matrix justifies carrying the candidate forward,
-  but not changing the default from the trace family used to derive it.
+- Recommend `--max-prefill-streak 1 --decode-active-prefill-length 2304
+  --decode-result-before-prefill` for the calibrated L20/Qwen3-32B TP=4 profile. Experiment 019's
+  fresh matrix passed 288/288 requests with at most 0.125% per-rate throughput regression. Keep the
+  generic default disabled because this policy is model, hardware, and workload dependent.
 
 ## Next experiment
 
-Run experiment 019: compare active-only 2304 with and without `--decode-result-before-prefill` on
-three fresh seeds at 0.5/0.9/1.5/2.5 requests/s. Promote the policy only if every request meets the
-TPOT SLO and per-rate mean throughput regression remains within 1%.
+Run experiment 020: instrument radix-cache hits, inserted tokens, and evictions, then establish
+no-shared-prefix, shared-system-prefix, and multi-turn baselines before selecting a cache-policy
+optimization.

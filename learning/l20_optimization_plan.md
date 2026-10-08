@@ -73,8 +73,12 @@ load and regressed overload throughput by 1.14%.
   a completed decode result waited behind the following blocking prefill `_forward`. The opt-in
   result-before-prefill barrier reduced maximum TPOT from 1.34 seconds to 0.78 seconds, passed all
   144 boundary requests, and changed overload throughput by -0.060%.
-- Experiment 019 will run a fresh-seed held-out matrix across 0.5/0.9/1.5/2.5 requests/s. A final
-  strict-SLO claim and deployment-profile promotion depend on that result.
+- Experiment 019 completed the fresh-seed held-out matrix across 0.5/0.9/1.5/2.5 requests/s. The
+  response barrier passed all 288 treatment requests, reduced held-out maximum TPOT from 1.12 to
+  0.79 seconds, and limited per-rate throughput regression to 0.125%. It is now part of the scoped
+  L20/Qwen3-32B TP=4 recommendation while remaining disabled by default.
+- The online-scheduling sequence is complete for this workload. Experiment 020 returns to Phase 2
+  and begins radix-cache hit/eviction instrumentation before any cache-policy change.
 
 ## Success criteria
 
