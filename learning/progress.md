@@ -84,9 +84,25 @@
   because each loses a paired survivor. No reliable workload-level identity exists in the current
   request/cache API, so no new generic heuristic is enabled.
 
+## Experiment 031 result
+
+Experiment 031 audited the PyNCCL sizing premise and rejected the optimization: the active
+  `SchedulerConfig.max_forward_len` already equals `max_extend_tokens=8192`, selecting 80 MiB/rank
+  for Qwen3-32B BF16 rather than the 400 MiB context-window bound. A regression test should preserve
+  this invariant; no GPU matrix or runtime change is justified.
+
+## Experiment 032 result
+
+Experiment 032 added NVTX attribution for TP collectives and measured the existing direct PyNCCL
+path (`MINISGL_PYNCCL_MAX_BUFFER_SIZE=0`). Nsight showed TP=4 all-reduce kernels at about 41.9% of
+cumulative GPU kernel time, clearing the communication bottleneck gate. In a paired three-repeat
+Qwen3-32B TP=4 online matrix, direct communication improved throughput 9.54%/11.82%/11.34% at
+concurrency 1/8/32 and reduced average TPOT 3.81%/7.00%/8.00%; P90 TPOT improved at all three
+loads. Accept it as an explicit L20 TP=4 deployment profile, but keep the generic default unchanged
+pending TP=8 online and CUDA Graph validation.
+
 ## Next experiment
 
-Experiment 030 is complete. The next optimization is experiment 031: derive the PyNCCL symmetric
-communication buffer from the scheduler's real forward-batch budget instead of the model's maximum
-context window. Measure per-rank memory reclaimed, KV capacity, startup, throughput, and latency;
-keep the adaptive-reserve profile frozen and all generic cache heuristics disabled while doing so.
+Experiment 033: validate the direct PyNCCL path at TP=8 and with CUDA Graphs enabled at TP=4 before
+reconsidering automatic default selection. The adaptive-reserve profile remains frozen and generic
+cache heuristics remain disabled.

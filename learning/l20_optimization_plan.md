@@ -125,19 +125,23 @@ load and regressed overload throughput by 1.14%.
   paired survivor, and the current request/cache API has no reliable workload-level identity to
   replace them. Keep all generic defaults disabled; reopen only with a new identity/admission API
   and a fresh three-seed open-loop validation.
-- The next optimization is experiment 031: auto-size the PyNCCL symmetric buffer from the actual
-  scheduler forward-batch budget. The current bound follows Qwen3-32B's 40,960-token context and
-  can reserve roughly 400 MiB per TP rank, while the calibrated scheduler admits at most 8,192
-  prefill tokens per batch. Treat this as a memory-accounting optimization with a direct NCCL
-  fallback; require correctness, throughput, latency, and per-rank memory evidence before changing
-  the default.
+- Experiment 031 audited the PyNCCL sizing premise and rejected the proposed change. The active
+  `SchedulerConfig.max_forward_len` already follows `max_extend_tokens=8192`, selecting 80 MiB/rank
+  for Qwen3-32B BF16; the 400 MiB context-window calculation belongs only to the unused base
+  property. Preserve this source invariant with a regression test and do not run a redundant GPU
+  matrix.
+- Experiment 032 completed TP collective attribution. TP=4 all-reduce kernels were about 41.9% of
+  cumulative GPU kernel time, and the existing direct PyNCCL path (`MINISGL_PYNCCL_MAX_BUFFER_SIZE=0`)
+  improved paired online throughput by 9.54%/11.82%/11.34% at concurrency 1/8/32 while reducing
+  average TPOT 3.81%/7.00%/8.00%. Accept it as an explicit L20 TP=4 profile; keep the generic
+  default unchanged until TP=8 online and CUDA Graph validation are complete.
 
 ## Next experiment
 
-Experiment 031: PyNCCL communication-buffer auto-sizing. First profile the current reservation and
-then compare fixed 96/128 MiB caps with a scheduler-derived bound on Qwen3-32B BF16 TP=4. Run a
-three-seed online confirmation only for a candidate that passes the pre-registered memory,
-correctness, throughput, and latency rules.
+Experiment 033: direct PyNCCL validation. Confirm the accepted TP=4 direct path at TP=8 and with
+CUDA Graphs enabled, then decide whether hardware-aware automatic selection is justified. Do not
+start asynchronous communication work unless the direct-path baseline leaves a measured residual
+collective bottleneck.
 
 ## Success criteria
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
@@ -10,6 +11,17 @@ import torch.distributed as dist
 if TYPE_CHECKING:
     from minisgl.distributed import DistributedInfo
     from minisgl.kernel import PyNCCLCommunicator
+
+
+@contextmanager
+def _collective_nvtx(op: str, tensor: torch.Tensor):
+    """Annotate a collective without changing CPU-only test behavior."""
+    if tensor.is_cuda:
+        label = f"MiniSGL.TP.{op}.bytes={tensor.numel() * tensor.element_size()}"
+        with torch.cuda.nvtx.range(label):
+            yield
+    else:
+        yield
 
 
 @dataclass
@@ -27,7 +39,8 @@ class TorchDistributedImpl(DistributedImpl):
         tp_size = dist.get_world_size()
         if tp_size == 1:
             return x
-        dist.all_reduce(x, op=dist.ReduceOp.SUM)
+        with _collective_nvtx("all_reduce", x):
+            dist.all_reduce(x, op=dist.ReduceOp.SUM)
         return x
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
@@ -37,7 +50,8 @@ class TorchDistributedImpl(DistributedImpl):
         shape = list(x.shape)
         shape[0] = shape[0] * tp_size
         out = torch.empty(shape, dtype=x.dtype, device=x.device)
-        dist.all_gather_into_tensor(out, x)
+        with _collective_nvtx("all_gather", x):
+            dist.all_gather_into_tensor(out, x)
         return out
 
 
@@ -46,7 +60,8 @@ class PyNCCLDistributedImpl(DistributedImpl):
     comm: PyNCCLCommunicator
 
     def all_reduce(self, x: torch.Tensor) -> torch.Tensor:
-        self.comm.all_reduce(x, "sum")
+        with _collective_nvtx("all_reduce", x):
+            self.comm.all_reduce(x, "sum")
         return x
 
     def all_gather(self, x: torch.Tensor) -> torch.Tensor:
@@ -56,7 +71,8 @@ class PyNCCLDistributedImpl(DistributedImpl):
         output_shape = list(x.shape)
         output_shape[0] *= world_size
         result = x.new_empty(output_shape)
-        self.comm.all_gather(result, x)
+        with _collective_nvtx("all_gather", x):
+            self.comm.all_gather(result, x)
         return result
 
 

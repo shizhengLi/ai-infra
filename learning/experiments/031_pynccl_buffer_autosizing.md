@@ -2,113 +2,95 @@
 
 ## Status
 
-Planned. This is the next implementation experiment after the adaptive-reserve branch was closed
-in experiment 030.
+Complete, hypothesis rejected. The server already sizes the PyNCCL buffer from the scheduler's
+forward budget, so no buffer-sizing code change is justified by this experiment.
 
 ## Why this experiment
 
-The current PyNCCL communicator sizes its symmetric internal buffer from the model's maximum
-sequence length. Qwen3-32B advertises a 40,960-token context, so the TP=4 server can reserve a
-buffer close to:
+The base `EngineConfig` exposes a context-window-derived `max_forward_len`, but the actual server
+configuration is `ServerArgs -> SchedulerConfig`. `SchedulerConfig` overrides that property and
+returns `max_extend_tokens`. Qwen3-32B advertises a 40,960-token context, but the calibrated
+server uses an 8,192-token forward budget, so the selected buffer is:
 
 ```text
-40960 * hidden_size(5120) * BF16(2 bytes) = 400 MiB per rank
+8192 * hidden_size(5120) * BF16(2 bytes) = 80 MiB per rank
 ```
 
-The scheduler normally bounds one forward batch by `max_extend_tokens=8192` tokens. The current
-upper bound is therefore tied to the model's context window instead of the engine's actual batch
-budget. This is a concrete memory-accounting inefficiency and a better next target than another
-generic cache-hotness heuristic.
+The context-window calculation would be 400 MiB, but it is not used by the serving path. The
+initial optimization hypothesis was therefore based on the wrong configuration layer. This is a
+useful negative result: source-level accounting must be checked before launching a costly GPU
+matrix.
 
 ## Interview value
 
-This experiment demonstrates a complete systems optimization loop:
+This audit demonstrates a complete systems optimization loop:
 
 1. trace a reservation to its source (`EngineConfig.max_forward_len` -> `init_pynccl`);
-2. derive a safe upper bound from scheduler batch semantics;
-3. preserve a direct NCCL fallback when a tensor exceeds the internal buffer;
-4. measure memory capacity, initialization, communication, and serving latency together;
-5. accept the change only if correctness and throughput remain stable.
+2. trace the subclass override that changes the bound;
+3. calculate the real selected allocation before changing code;
+4. reject an optimization whose premise is not present;
+5. turn the source invariant into a regression test.
 
-The result is easy to explain as “reduce over-reserved communication memory without changing the
-collective contract,” and it directly uses the L20 PCIe/TP setup described in `grok.md`.
+The negative result is easy to explain in an interview: validate the configuration inheritance
+before changing a distributed runtime, then preserve the already-correct bound. It directly uses
+the L20 PCIe/TP setup described in `grok.md`.
 
 ## Hypothesis
 
-Sizing the PyNCCL internal buffer from the maximum scheduler forward batch, with a small safety
-margin, will free memory on every TP rank without changing model outputs or steady-state serving
-performance. The freed memory should increase available KV-cache capacity or reduce initialization
-pressure.
+The hypothesis that the serving path over-allocates a context-window-sized buffer is rejected. The
+current 80 MiB allocation already follows the scheduler budget and is capped by the existing
+`MINISGL_PYNCCL_MAX_BUFFER_SIZE` environment setting.
 
-## Proposed implementation
+## Source audit
 
-Replace the context-window-derived bound with a scheduler-aware bound:
+The active call chain is:
 
 ```text
-forward_tokens = max(max_extend_tokens, max_running_requests)
-required_bytes = forward_tokens * hidden_size * dtype.itemsize
-buffer_bytes = ceil_to_alignment(required_bytes * safety_margin)
+ServerArgs.max_extend_tokens (8192)
+  -> SchedulerConfig.max_forward_len (8192)
+  -> Engine._init_communication()
+  -> init_pynccl(max_size_bytes=8192 * hidden_size * dtype.itemsize)
 ```
 
-The implementation must keep an explicit environment cap for debugging and retain the existing
-direct `ncclAllReduce` path when a runtime tensor is larger than the symmetric buffer. It must log
-the requested bound, selected buffer size, and whether the cap was applied. The default safety
-margin and alignment are implementation details to be fixed before Stage A, not tuned after seeing
-the results.
+`init_pynccl` still applies the explicit environment cap and the C++ wrapper still falls back to
+direct `ncclAllReduce` for tensors larger than the internal buffer. Neither path needs to change for
+this experiment.
 
-## Stage A matrix
+## Validation
 
-Use Qwen3-32B BF16 on L20 with TP=4, GPUs 0-3, `fi`, CUDA Graph max batch size 64, and the
-calibrated scheduling profile (`max-prefill-streak=1`, decode-active prefill 2304, result-before-
-prefill). Keep model, prompts, output lengths, concurrency, and seeds fixed.
+The source-level audit used the local Qwen3-32B ModelScope snapshot and TP=4 configuration:
 
-| Cell | Buffer policy | Purpose |
-| --- | --- | --- |
-| Control | current context-window bound | Existing behavior |
-| Candidate 1 | fixed 96 MiB cap | Covers the 8192-token BF16 forward bound with margin |
-| Candidate 2 | fixed 128 MiB cap | Conservative manual cap |
-| Treatment | scheduler-derived bound | Proposed automatic policy |
+```text
+max_extend_tokens = 8192
+max_forward_len = 8192
+max_seq_len = 40960
+hidden_size = 5120
+dtype = BF16 (2 bytes)
+selected buffer = 80.0 MiB/rank
+context-window bound = 400.0 MiB/rank (not selected)
+```
 
-Run three fresh-server repetitions per cell. A short fixed-shape decode pass should establish
-startup and throughput behavior before any longer online run.
+No GPU Stage A matrix was run because the proposed treatment would not exercise a different code
+path. Running 96/128 MiB caps would increase the reservation relative to the actual control and
+would not test the stated optimization.
 
-## Metrics
+## Regression guard
 
-- PyNCCL requested and selected buffer bytes per rank;
-- free memory before/after model and communicator initialization;
-- KV-cache pages/tokens allocated;
-- server initialization time;
-- output throughput, average/P90 TTFT, average/P90 TPOT, and maximum TPOT;
-- NCCL/PyNCCL errors and output correctness;
-- peak memory and GPU power when available.
+Add a unit test asserting that `SchedulerConfig.max_forward_len` follows
+`max_extend_tokens`, so a future refactor cannot silently restore context-window sizing to the
+server path.
 
-## Acceptance rules
+## Decision
 
-Accept the automatic policy only if all three repetitions satisfy every rule:
-
-- zero output or collective errors;
-- identical deterministic outputs to the control;
-- no more than 1% steady-state throughput regression;
-- no more than 3% P90 TTFT or TPOT regression;
-- selected buffer is no larger than the current context-window allocation;
-- at least 128 MiB additional free memory per rank, or a measured increase in KV capacity;
-- no new synchronization or allocator failure under the calibrated online workload.
-
-If a smaller fixed cap passes but the automatic policy does not, keep the result as a documented
-manual deployment profile and investigate the missing forward-shape bound before changing the
-default.
-
-## Stage B
-
-Only the best Stage A candidate enters a three-seed online confirmation. TP=8 is a secondary
-robustness check because it crosses the two L20 PCIe/NUMA groups; it is not the primary acceptance
-target. Communication overlap or asynchronous collectives are explicitly deferred until buffer
-sizing is measured, so later code changes have an attributed baseline.
+Reject the buffer-sizing optimization as unnecessary for the current serving path. Keep the
+existing sizing and environment cap. Move the next optimization to TP collective attribution and
+communication/computation overlap, where the current code still performs synchronous dependency
+points inside row-parallel and output-projection layers.
 
 ## Artifacts
 
-- planned implementation: `python/minisgl/engine/config.py`, `python/minisgl/engine/engine.py`,
-  and `python/minisgl/kernel/pynccl.py`;
-- benchmark: `benchmark/online/bench_l20.py` or a focused TP memory/throughput harness;
-- result note: this file will be updated with the fixed commands, raw reports, JSON, and decision;
-- all measurements go under `learning/results/031_*`.
+- source audit: `python/minisgl/scheduler/config.py`, `python/minisgl/engine/engine.py`, and
+  `python/minisgl/kernel/pynccl.py`;
+- regression test: `tests/core/test_engine_config.py`;
+- no `learning/results/031_*` GPU matrix is recorded because the treatment was not distinct from
+  control.
