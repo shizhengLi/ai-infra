@@ -104,8 +104,12 @@ load and regressed overload throughput by 1.14%.
   -0.036% concurrent throughput change, -1.64% survivor TTFT change, and no paired survivor-match
   regression. It passes the concurrent acceptance rules but remains opt-in until open-loop arrival
   and cap-sensitivity tests are complete.
+- Experiment 026 tested open-loop arrivals with adaptive caps 64/128/256. Every adaptive cap lost
+  at least one paired survivor prefix despite exact target reclamation; cap256 also regressed
+  survivor TTFT by 78.8%. The raw admitted-demand sum is therefore rejected for open-loop use, and
+  the adaptive recommendation remains limited to phase-batched workloads.
 - The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  026: validate adaptive reserve under open-loop arrivals and a reserve-cap sweep.
+  027: test age/priority-aware reserve accounting against the open-loop failure trace.
 
 ## Success criteria
 

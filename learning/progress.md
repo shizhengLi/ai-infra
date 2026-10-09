@@ -64,8 +64,12 @@
   throughput changed -0.036%, survivor TTFT improved 1.64%, and all 21 paired survivor matches were
   preserved. The adaptive sum did not over-reserve in this workload; keep it opt-in pending open-loop
   arrival and cap-sensitivity testing.
+- Experiment 026 rejected the raw adaptive sum for open-loop arrivals. At seed 3100042, caps 64/128/256
+  reduced eviction calls 70.0%/81.7%/85.0% but each lost at least one paired survivor prefix; cap256
+  also raised survivor TTFT 78.8%. No cap entered Stage B. Keep adaptive reserve restricted to the
+  phase-batched profile and investigate age/priority-aware reserve accounting.
 
 ## Next experiment
 
-Run experiment 026: use open-loop arrivals and a cap sweep around adaptive-max-128 to test reserve
-stability beyond phase-barrier batches.
+Run experiment 027: design a priority/age-aware adaptive reserve that discounts nearly finished
+requests and validate it against the rejected open-loop trace.
