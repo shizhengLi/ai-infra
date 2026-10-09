@@ -99,8 +99,13 @@ load and regressed overload throughput by 1.14%.
   21/21 complete hot-prefix matches, reduced mean complete-sequence eviction calls from 34 to 6 and
   reclamation by 8.34%, changed throughput by -0.078%, and improved hot TTFT by 4.23%. The policy is
   accepted for production-shaped concurrency testing but remains disabled by default.
+- Experiment 025 extended the validation to concurrent mixed-length groups. Across three seeds,
+  adaptive-max-128 reduced mean eviction calls from 41.67 to 8.33 and reclamation by 1.73%, with
+  -0.036% concurrent throughput change, -1.64% survivor TTFT change, and no paired survivor-match
+  regression. It passes the concurrent acceptance rules but remains opt-in until open-loop arrival
+  and cap-sensitivity tests are complete.
 - The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  025: validate adaptive reserve under concurrent variable-length arrivals before broadening scope.
+  026: validate adaptive reserve under open-loop arrivals and a reserve-cap sweep.
 
 ## Success criteria
 

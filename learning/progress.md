@@ -9,7 +9,7 @@
 | CUDA Graph sizing | Complete | 23 -> 19 graphs; initialization 8.3615 -> 7.3553 s |
 | CUDA Graph value | Complete | Enabled graph improves median throughput by 30.97% vs eager |
 | Attention backend sweep | Complete | FA3 compatibility restored; `fa,fi` -0.17%, pure `fa` -15.00% vs `fi` median |
-| KV/radix experiments | Adaptive reserve accepted | Mixed-output calls 34 -> 6; reclamation -8.34%; throughput -0.078%; 21/21 hot hits retained |
+| KV/radix experiments | Concurrent adaptive reserve accepted | Batched calls 41.67 -> 8.33; reclamation -1.73%; throughput -0.036%; paired matches preserved |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
 | TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
@@ -59,8 +59,13 @@
   reclamation fell 8.34%, all 21 hot probes remained 519/519 hits, throughput changed -0.078%, and
   hot TTFT improved 4.23%. Keep the generic default disabled because concurrency and the 128-page
   cap have not yet been validated under realistic arrivals.
+- Experiment 025 validated the same adaptive cap under concurrent phase batches across three seeds.
+  Mean complete-sequence eviction calls fell 80.0% (41.67 -> 8.33), actual reclamation fell 1.73%,
+  throughput changed -0.036%, survivor TTFT improved 1.64%, and all 21 paired survivor matches were
+  preserved. The adaptive sum did not over-reserve in this workload; keep it opt-in pending open-loop
+  arrival and cap-sensitivity testing.
 
 ## Next experiment
 
-Run experiment 025: compare fixed 16 and adaptive-max-128 under concurrent variable-length arrivals,
-including enough overlap to test whether summing admitted remaining demand over-reserves cache.
+Run experiment 026: use open-loop arrivals and a cap sweep around adaptive-max-128 to test reserve
+stability beyond phase-barrier batches.
