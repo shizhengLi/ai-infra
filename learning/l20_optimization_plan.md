@@ -108,8 +108,12 @@ load and regressed overload throughput by 1.14%.
   at least one paired survivor prefix despite exact target reclamation; cap256 also regressed
   survivor TTFT by 78.8%. The raw admitted-demand sum is therefore rejected for open-loop use, and
   the adaptive recommendation remains limited to phase-batched workloads.
+- Experiment 027 tested age-aware reserve caps 64/128 on the same open-loop trace. Calls fell 65.5%
+  and 77.6% with no throughput/TTFT regression, but cap64 lost A's survivor match and cap128 lost
+  B's. Age alone is rejected as a safe eviction signal; the next candidate must account for prefix
+  hotness or recent match history.
 - The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  027: test age/priority-aware reserve accounting against the open-loop failure trace.
+  028: test hot-prefix protection in adaptive reserve accounting against the open-loop failure trace.
 
 ## Success criteria
 

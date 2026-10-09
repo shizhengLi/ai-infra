@@ -249,6 +249,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--radix-partial-eviction-adaptive-reserve-mode",
+        choices=["raw", "age-aware"],
+        default=ServerArgs.radix_partial_eviction_adaptive_reserve_mode,
+        help=(
+            "Adaptive reserve accounting: raw sums remaining demand; age-aware discounts "
+            "requests according to their remaining output fraction."
+        ),
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

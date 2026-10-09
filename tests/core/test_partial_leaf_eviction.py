@@ -255,6 +255,18 @@ def test_adaptive_reserve_uses_remaining_batch_pages_and_cap() -> None:
     assert manager._get_adaptive_reserve_pages(reqs) == 6
 
 
+def test_age_aware_adaptive_reserve_discounts_nearly_finished_requests() -> None:
+    manager = make_reserve_manager(num_pages=32, page_size=4, reserve_pages=0)
+    manager.radix_partial_eviction_adaptive_reserve_max_pages = 8
+    manager.radix_partial_eviction_adaptive_reserve_mode = "age-aware"
+    reqs = [
+        SimpleNamespace(remain_len=16, output_len=16),
+        SimpleNamespace(remain_len=4, output_len=16),
+    ]
+
+    assert manager._get_adaptive_reserve_pages(reqs) == 5
+
+
 def test_disabled_adaptive_reserve_defers_to_fixed_policy() -> None:
     manager = make_reserve_manager(num_pages=8, reserve_pages=2)
 
@@ -262,11 +274,12 @@ def test_disabled_adaptive_reserve_defers_to_fixed_policy() -> None:
 
 
 @pytest.mark.parametrize(
-    ("partial", "fixed", "adaptive", "match"),
+    ("partial", "fixed", "adaptive", "match", "mode"),
     [
-        (True, 0, -1, "must be non-negative"),
-        (False, 0, 16, "requires partial-leaf eviction"),
-        (True, 16, 16, "mutually exclusive"),
+        (True, 0, -1, "must be non-negative", "raw"),
+        (False, 0, 16, "requires partial-leaf eviction", "raw"),
+        (True, 16, 16, "mutually exclusive", "raw"),
+        (True, 0, 16, "mode must be 'raw' or 'age-aware'", "invalid"),
     ],
 )
 def test_adaptive_reserve_rejects_invalid_configuration(
@@ -274,6 +287,7 @@ def test_adaptive_reserve_rejects_invalid_configuration(
     fixed: int,
     adaptive: int,
     match: str,
+    mode: str,
 ) -> None:
     core.set_global_ctx(core.Context(page_size=1))
 
@@ -286,4 +300,5 @@ def test_adaptive_reserve_rejects_invalid_configuration(
             radix_partial_eviction=partial,
             radix_partial_eviction_reserve_pages=fixed,
             radix_partial_eviction_adaptive_reserve_max_pages=adaptive,
+            radix_partial_eviction_adaptive_reserve_mode=mode,
         )

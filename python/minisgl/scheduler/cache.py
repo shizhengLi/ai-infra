@@ -181,6 +181,7 @@ class CacheManager:
         radix_partial_eviction: bool = False,
         radix_partial_eviction_reserve_pages: int = 0,
         radix_partial_eviction_adaptive_reserve_max_pages: int = 0,
+        radix_partial_eviction_adaptive_reserve_mode: str = "raw",
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -202,6 +203,8 @@ class CacheManager:
             raise ValueError("Adaptive partial-eviction reserve maximum must be non-negative")
         if radix_partial_eviction_adaptive_reserve_max_pages > 0 and not radix_partial_eviction:
             raise ValueError("Adaptive reserve requires partial-leaf eviction")
+        if radix_partial_eviction_adaptive_reserve_mode not in {"raw", "age-aware"}:
+            raise ValueError("Adaptive reserve mode must be 'raw' or 'age-aware'")
         if (
             radix_partial_eviction_reserve_pages > 0
             and radix_partial_eviction_adaptive_reserve_max_pages > 0
@@ -211,6 +214,9 @@ class CacheManager:
         self.radix_partial_eviction_reserve_pages = radix_partial_eviction_reserve_pages
         self.radix_partial_eviction_adaptive_reserve_max_pages = (
             radix_partial_eviction_adaptive_reserve_max_pages
+        )
+        self.radix_partial_eviction_adaptive_reserve_mode = (
+            radix_partial_eviction_adaptive_reserve_mode
         )
 
     def match_req(self, req: PendingReq) -> MatchResult:
@@ -257,7 +263,20 @@ class CacheManager:
         max_pages = self.radix_partial_eviction_adaptive_reserve_max_pages
         if max_pages == 0:
             return None
-        remaining_pages = sum(div_ceil(req.remain_len, self.page_size) for req in reqs)
+        if self.radix_partial_eviction_adaptive_reserve_mode == "raw":
+            remaining_pages = sum(div_ceil(req.remain_len, self.page_size) for req in reqs)
+        else:
+            remaining_pages = 0
+            for req in reqs:
+                if req.remain_len <= 0:
+                    continue
+                # Generated output is the age proxy: a nearly finished request should
+                # contribute less future demand than a newly admitted request.
+                remaining_fraction = min(1.0, req.remain_len / max(req.output_len, 1))
+                remaining_pages += max(
+                    1,
+                    int(div_ceil(req.remain_len, self.page_size) * remaining_fraction),
+                )
         return min(remaining_pages, max_pages)
 
     def cache_req(self, req: Req, *, finished: bool) -> None:

@@ -75,6 +75,9 @@ class Scheduler(SchedulerIOMixin):
             radix_partial_eviction_adaptive_reserve_max_pages=(
                 config.radix_partial_eviction_adaptive_reserve_max_pages
             ),
+            radix_partial_eviction_adaptive_reserve_mode=(
+                config.radix_partial_eviction_adaptive_reserve_mode
+            ),
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(

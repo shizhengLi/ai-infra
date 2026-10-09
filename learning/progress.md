@@ -68,8 +68,12 @@
   reduced eviction calls 70.0%/81.7%/85.0% but each lost at least one paired survivor prefix; cap256
   also raised survivor TTFT 78.8%. No cap entered Stage B. Keep adaptive reserve restricted to the
   phase-batched profile and investigate age/priority-aware reserve accounting.
+- Experiment 027 added an opt-in age-aware reserve that discounts requests by remaining-output
+  fraction. On the fixed open-loop trace, age-aware caps 64 and 128 reduced eviction calls 65.5%
+  and 77.6%, with throughput and TTFT within limits, but cap64 lost A's survivor match and cap128
+  lost B's. Both candidates are rejected; age alone is insufficient to identify safe eviction.
 
 ## Next experiment
 
-Run experiment 027: design a priority/age-aware adaptive reserve that discounts nearly finished
-requests and validate it against the rejected open-loop trace.
+Run experiment 028: add prefix-hotness protection to adaptive reserve accounting and validate it
+against the rejected open-loop trace.
