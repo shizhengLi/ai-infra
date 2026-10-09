@@ -14,27 +14,33 @@ class BaseKVCachePool(ABC):
     """
 
     @abstractmethod
-    def k_cache(self, index: int) -> torch.Tensor: ...
+    def k_cache(self, index: int) -> torch.Tensor:
+        ...
 
     @abstractmethod
-    def v_cache(self, index: int) -> torch.Tensor: ...
+    def v_cache(self, index: int) -> torch.Tensor:
+        ...
 
     @abstractmethod
     def store_kv(
         self, k: torch.Tensor, v: torch.Tensor, out_loc: torch.Tensor, layer_id: int
-    ) -> None: ...
+    ) -> None:
+        ...
 
     @property
     @abstractmethod
-    def device(self) -> torch.device: ...
+    def device(self) -> torch.device:
+        ...
 
     @property
     @abstractmethod
-    def dtype(self) -> torch.dtype: ...
+    def dtype(self) -> torch.dtype:
+        ...
 
     @property
     @abstractmethod
-    def num_layers(self) -> int: ...
+    def num_layers(self) -> int:
+        ...
 
 
 @dataclass(frozen=True)
@@ -42,7 +48,8 @@ class BaseCacheHandle(ABC):
     cached_len: int
 
     @abstractmethod
-    def get_matched_indices(self) -> torch.Tensor: ...
+    def get_matched_indices(self) -> torch.Tensor:
+        ...
 
 
 class SizeInfo(NamedTuple):
@@ -106,7 +113,14 @@ class BasePrefixCache(ABC):
         """
 
     @abstractmethod
-    def evict(self, size: int, *, partial: bool = False) -> torch.Tensor:
+    def evict(
+        self,
+        size: int,
+        *,
+        partial: bool = False,
+        protected_nodes: set[object] | None = None,
+        hotness_scores: dict[object, float] | None = None,
+    ) -> torch.Tensor:
         """
         Evict some prefixes from the cache to free up space.
         This operation will modify the cache.

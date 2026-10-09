@@ -120,6 +120,38 @@ def test_partial_eviction_does_not_trim_protected_leaf() -> None:
     assert cache.size_info.evictable_size == 5
 
 
+def test_recent_match_protection_precedes_lru_timestamp() -> None:
+    cache = make_radix_cache()
+    cold_handle = insert(cache, list(range(10, 14)), list(range(100, 104)))
+    hot_handle = insert(cache, list(range(20, 24)), list(range(200, 204)))
+    hot_handle.node.timestamp = cold_handle.node.timestamp - 1
+
+    evicted = cache.evict(4, partial=True, protected_nodes={hot_handle.node})
+
+    assert evicted.tolist() == list(range(100, 104))
+    assert (
+        cache.match_prefix(
+            torch.tensor(list(range(20, 24)), dtype=torch.int32)
+        ).cuda_handle.cached_len
+        == 4
+    )
+
+
+def test_decayed_hotness_precedes_lru_timestamp() -> None:
+    cache = make_radix_cache()
+    cold_handle = insert(cache, list(range(30, 34)), list(range(300, 304)))
+    hot_handle = insert(cache, list(range(40, 44)), list(range(400, 404)))
+    hot_handle.node.timestamp = cold_handle.node.timestamp - 1
+
+    evicted = cache.evict(
+        4,
+        partial=True,
+        hotness_scores={hot_handle.node: 2.0},
+    )
+
+    assert evicted.tolist() == list(range(300, 304))
+
+
 def test_cache_manager_partial_evict_keeps_page_accounting() -> None:
     page_size = 4
     num_pages = 4
@@ -274,12 +306,23 @@ def test_disabled_adaptive_reserve_defers_to_fixed_policy() -> None:
 
 
 @pytest.mark.parametrize(
-    ("partial", "fixed", "adaptive", "match", "mode"),
+    (
+        "partial",
+        "fixed",
+        "adaptive",
+        "match",
+        "mode",
+        "protected_matches",
+        "hotness_decay",
+    ),
     [
-        (True, 0, -1, "must be non-negative", "raw"),
-        (False, 0, 16, "requires partial-leaf eviction", "raw"),
-        (True, 16, 16, "mutually exclusive", "raw"),
-        (True, 0, 16, "mode must be 'raw' or 'age-aware'", "invalid"),
+        (True, 0, -1, "must be non-negative", "raw", 0, 0.0),
+        (False, 0, 16, "requires partial-leaf eviction", "raw", 0, 0.0),
+        (True, 16, 16, "mutually exclusive", "raw", 0, 0.0),
+        (True, 0, 16, "mode must be 'raw' or 'age-aware'", "invalid", 0, 0.0),
+        (False, 0, 0, "requires partial-leaf eviction", "raw", 1, 0.0),
+        (True, 0, 0, "Hotness decay must be in", "raw", 0, 1.0),
+        (False, 0, 0, "Hotness ranking requires", "raw", 0, 0.9),
     ],
 )
 def test_adaptive_reserve_rejects_invalid_configuration(
@@ -288,6 +331,8 @@ def test_adaptive_reserve_rejects_invalid_configuration(
     adaptive: int,
     match: str,
     mode: str,
+    protected_matches: int,
+    hotness_decay: float,
 ) -> None:
     core.set_global_ctx(core.Context(page_size=1))
 
@@ -301,4 +346,6 @@ def test_adaptive_reserve_rejects_invalid_configuration(
             radix_partial_eviction_reserve_pages=fixed,
             radix_partial_eviction_adaptive_reserve_max_pages=adaptive,
             radix_partial_eviction_adaptive_reserve_mode=mode,
+            radix_partial_eviction_protect_recent_matches=protected_matches,
+            radix_partial_eviction_hotness_decay=hotness_decay,
         )

@@ -29,7 +29,14 @@ class NaivePrefixCache(BasePrefixCache):
     def insert_prefix(self, input_ids: torch.Tensor, indices: torch.Tensor) -> InsertResult:
         return InsertResult(0, NaiveCacheHandle())
 
-    def evict(self, size: int, *, partial: bool = False) -> torch.Tensor:
+    def evict(
+        self,
+        size: int,
+        *,
+        partial: bool = False,
+        protected_nodes: set[object] | None = None,
+        hotness_scores: dict[object, float] | None = None,
+    ) -> torch.Tensor:
         if size == 0:
             return self.empty_tensor
         raise NotImplementedError("NaiveCacheManager does not support eviction.")

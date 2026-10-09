@@ -72,8 +72,21 @@
   fraction. On the fixed open-loop trace, age-aware caps 64 and 128 reduced eviction calls 65.5%
   and 77.6%, with throughput and TTFT within limits, but cap64 lost A's survivor match and cap128
   lost B's. Both candidates are rejected; age alone is insufficient to identify safe eviction.
+- Experiment 028 added opt-in recent-match protection around raw adaptive-64 eviction. Protection
+  windows of 4 and 8 reduced eviction calls 69.0%, but hot4 lost G's survivor match and hot8 lost
+  A's. A bounded recent-node list is therefore rejected as a safe open-loop hotness signal.
+- Experiment 029 added decayed request-level hotness ranking. Decay 0.90 and 0.99 reduced eviction
+  calls 70.2% and 66.7%, with throughput and TTFT within limits, but decay0.90 lost A and decay0.99
+  lost G in the survivor probes. Decayed reuse frequency is rejected as a generic open-loop signal.
+- Experiment 030 closed the adaptive-reserve policy branch with a deployment freeze gate. The
+  phase-batched adaptive-max-128 profile from experiment 025 remains accepted only as an explicit
+  opt-in scope; raw, age-aware, recent-match, and decayed-hotness open-loop variants are rejected
+  because each loses a paired survivor. No reliable workload-level identity exists in the current
+  request/cache API, so no new generic heuristic is enabled.
 
 ## Next experiment
 
-Run experiment 028: add prefix-hotness protection to adaptive reserve accounting and validate it
-against the rejected open-loop trace.
+Experiment 030 is complete. Reopen this branch only after adding an explicit workload-level
+identity/admission API and validating it with a fresh three-seed open-loop matrix. Until then,
+freeze adaptive reserve to the phase-batched max-128 profile and keep all experimental defaults
+disabled.

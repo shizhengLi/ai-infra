@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from collections import deque
 from typing import TYPE_CHECKING, List, Tuple
 
 import torch
@@ -182,6 +183,8 @@ class CacheManager:
         radix_partial_eviction_reserve_pages: int = 0,
         radix_partial_eviction_adaptive_reserve_max_pages: int = 0,
         radix_partial_eviction_adaptive_reserve_mode: str = "raw",
+        radix_partial_eviction_protect_recent_matches: int = 0,
+        radix_partial_eviction_hotness_decay: float = 0.0,
     ):
         # The `_free_slots` follows a page-aligned manner. For example, if page_size = 2,
         # the `_free_slots` may look like [0, 2, 4, 6, ...], and each slot represents a page.
@@ -205,6 +208,14 @@ class CacheManager:
             raise ValueError("Adaptive reserve requires partial-leaf eviction")
         if radix_partial_eviction_adaptive_reserve_mode not in {"raw", "age-aware"}:
             raise ValueError("Adaptive reserve mode must be 'raw' or 'age-aware'")
+        if radix_partial_eviction_protect_recent_matches < 0:
+            raise ValueError("Recent-match protection count must be non-negative")
+        if radix_partial_eviction_protect_recent_matches > 0 and not radix_partial_eviction:
+            raise ValueError("Recent-match protection requires partial-leaf eviction")
+        if not 0.0 <= radix_partial_eviction_hotness_decay < 1.0:
+            raise ValueError("Hotness decay must be in [0, 1)")
+        if radix_partial_eviction_hotness_decay > 0.0 and not radix_partial_eviction:
+            raise ValueError("Hotness ranking requires partial-leaf eviction")
         if (
             radix_partial_eviction_reserve_pages > 0
             and radix_partial_eviction_adaptive_reserve_max_pages > 0
@@ -218,12 +229,39 @@ class CacheManager:
         self.radix_partial_eviction_adaptive_reserve_mode = (
             radix_partial_eviction_adaptive_reserve_mode
         )
+        self.radix_partial_eviction_protect_recent_matches = (
+            radix_partial_eviction_protect_recent_matches
+        )
+        self._recent_match_nodes: deque[object] = deque(
+            maxlen=radix_partial_eviction_protect_recent_matches
+        )
+        self.radix_partial_eviction_hotness_decay = radix_partial_eviction_hotness_decay
+        self._hotness_scores: dict[object, float] = {}
 
     def match_req(self, req: PendingReq) -> MatchResult:
         input_len = req.input_len
         assert input_len > 0, "Input length must be greater than 0."
         matchable_ids = req.input_ids[: input_len - 1]
         result = self.prefix_cache.match_prefix(matchable_ids)
+        if self.radix_partial_eviction_hotness_decay > 0.0:
+            decay = self.radix_partial_eviction_hotness_decay
+            self._hotness_scores = {
+                node: score * decay
+                for node, score in self._hotness_scores.items()
+                if score * decay >= 1e-4
+            }
+            node = getattr(result.cuda_handle, "node", None)
+            while node is not None and not node.is_root():
+                self._hotness_scores[node] = self._hotness_scores.get(node, 0.0) + 1.0
+                node = node.parent
+        if self.radix_partial_eviction_protect_recent_matches > 0:
+            node = getattr(result.cuda_handle, "node", None)
+            if node is not None and result.cuda_handle.cached_len > 0:
+                try:
+                    self._recent_match_nodes.remove(node)
+                except ValueError:
+                    pass
+                self._recent_match_nodes.append(node)
         if self.telemetry.enabled:
             self.telemetry.record_match(
                 uid=req.uid,
@@ -360,6 +398,8 @@ class CacheManager:
             evicted = self.prefix_cache.evict(
                 target_tokens,
                 partial=self.radix_partial_eviction,
+                protected_nodes=set(self._recent_match_nodes),
+                hotness_scores=dict(self._hotness_scores),
             )
             if self.telemetry.enabled:
                 self.telemetry.record_eviction(

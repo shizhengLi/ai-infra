@@ -59,6 +59,10 @@ def parse_args() -> argparse.Namespace:
         choices=["raw", "age-aware"],
         default="raw",
     )
+    parser.add_argument("--server-radix-partial-eviction-hotness-decay", type=float, default=0.0)
+    parser.add_argument(
+        "--server-radix-partial-eviction-protect-recent-matches", type=int, default=0
+    )
     parser.add_argument("--prompt-tokens", type=int, default=512)
     parser.add_argument("--markdown-out", type=Path, required=True)
     parser.add_argument("--json-out", type=Path, required=True)
@@ -159,6 +163,8 @@ responses, so short and long requests can be admitted while older decodes are st
 - Fixed reserve: `{config['server_radix_partial_eviction_reserve_pages']}` pages
 - Adaptive reserve maximum: `{config['server_radix_partial_eviction_adaptive_reserve_max_pages']}` pages
 - Adaptive reserve mode: `{config['server_radix_partial_eviction_adaptive_reserve_mode']}`
+- Protected recent matches: `{config['server_radix_partial_eviction_protect_recent_matches']}`
+- Hotness decay: `{config['server_radix_partial_eviction_hotness_decay']}`
 - Trace offsets: `0.00 / 0.75 / 1.50 / 4.50 / 6.00 s`
 - Seed: `{config['seed']}`
 

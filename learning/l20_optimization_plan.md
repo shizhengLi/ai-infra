@@ -112,8 +112,19 @@ load and regressed overload throughput by 1.14%.
   and 77.6% with no throughput/TTFT regression, but cap64 lost A's survivor match and cap128 lost
   B's. Age alone is rejected as a safe eviction signal; the next candidate must account for prefix
   hotness or recent match history.
-- The online-scheduling sequence is complete for this workload. Phase 2 continues with experiment
-  028: test hot-prefix protection in adaptive reserve accounting against the open-loop failure trace.
+- Experiment 028 tested recent-match protection windows of 4 and 8 nodes around raw adaptive-64
+  eviction. Both reduced calls by 69.0%, but hot4 lost G and hot8 lost A in the survivor probes.
+  A bounded recent-node window is rejected; the next candidate needs decayed request-level reuse
+  evidence across the whole open-loop trace.
+- Experiment 029 tested decayed request-level hotness with decay 0.90 and 0.99. Calls fell 70.2%
+  and 66.7%, but decay0.90 lost A and decay0.99 lost G. Decayed reuse frequency is rejected as a
+  generic open-loop eviction signal.
+- Experiment 030 closed the adaptive-reserve policy branch with a deployment freeze gate. The
+  phase-batched adaptive-max-128 profile from experiment 025 is accepted only as an explicit
+  opt-in scope. Raw, age-aware, recent-match, and decayed-hotness open-loop variants each lost a
+  paired survivor, and the current request/cache API has no reliable workload-level identity to
+  replace them. Keep all generic defaults disabled; reopen only with a new identity/admission API
+  and a fresh three-seed open-loop validation.
 
 ## Success criteria
 

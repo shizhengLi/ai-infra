@@ -78,6 +78,10 @@ class Scheduler(SchedulerIOMixin):
             radix_partial_eviction_adaptive_reserve_mode=(
                 config.radix_partial_eviction_adaptive_reserve_mode
             ),
+            radix_partial_eviction_protect_recent_matches=(
+                config.radix_partial_eviction_protect_recent_matches
+            ),
+            radix_partial_eviction_hotness_decay=config.radix_partial_eviction_hotness_decay,
         )
         self.decode_manager = DecodeManager(config.page_size)
         self.prefill_manager = PrefillManager(

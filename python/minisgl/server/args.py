@@ -259,6 +259,26 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--radix-partial-eviction-protect-recent-matches",
+        type=int,
+        default=ServerArgs.radix_partial_eviction_protect_recent_matches,
+        help=(
+            "Prefer cold radix leaves during eviction while protecting this many recently "
+            "matched prefix nodes. Zero disables the protection."
+        ),
+    )
+
+    parser.add_argument(
+        "--radix-partial-eviction-hotness-decay",
+        type=float,
+        default=ServerArgs.radix_partial_eviction_hotness_decay,
+        help=(
+            "Per-match hotness decay in [0, 1). Positive values rank radix leaves by "
+            "decayed reuse evidence during eviction."
+        ),
+    )
+
+    parser.add_argument(
         "--num-pages",
         dest="num_page_override",
         type=int,

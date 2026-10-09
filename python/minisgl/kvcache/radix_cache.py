@@ -155,23 +155,40 @@ class RadixPrefixCache(BasePrefixCache):
             node = new_node
         return InsertResult(prefix_len, RadixCacheHandle(insert_len, node))
 
-    def evict(self, size: int, *, partial: bool = False) -> torch.Tensor:
+    def evict(
+        self,
+        size: int,
+        *,
+        partial: bool = False,
+        protected_nodes: set[RadixTreeNode] | None = None,
+        hotness_scores: dict[RadixTreeNode, float] | None = None,
+    ) -> torch.Tensor:
         if size == 0:
             return self.empty_tensor
         assert (
             size <= self.evictable_size
         ), f"Cannot evict {size}, only {self.evictable_size} is evictable"
 
+        protected_nodes = protected_nodes or set()
+        hotness_scores = hotness_scores or {}
         leave_nodes = self._collect_leave_nodes_for_evict()
-        heapq.heapify(leave_nodes)
+        heap: list[tuple[bool, float, int, int, RadixTreeNode]] = [
+            (
+                self._is_protected(node, protected_nodes),
+                self._node_hotness(node, hotness_scores),
+                node.timestamp,
+                node.uuid,
+                node,
+            )
+            for node in leave_nodes
+        ]
+        heapq.heapify(heap)
         evicted_indices: List[torch.Tensor] = []
         evicted_size = 0
 
         while evicted_size < size:
-            assert (
-                leave_nodes
-            ), f"Cannot evict enough cache, need {size}, only {evicted_size} evicted"
-            node = heapq.heappop(leave_nodes)
+            assert heap, f"Cannot evict enough cache, need {size}, only {evicted_size} evicted"
+            _protected, _hotness, _timestamp, _uuid, node = heapq.heappop(heap)
             assert node.ref_count == 0 and node.is_leaf() and not node.is_root()
             remaining_size = size - evicted_size
             trim_size = div_ceil(remaining_size, self.page_size) * self.page_size
@@ -187,9 +204,34 @@ class RadixPrefixCache(BasePrefixCache):
             del parent.children[self.key_fn(node._key)]
             # NOTE: root is always protected, so won't be evicted
             if parent.is_leaf() and parent.ref_count == 0:
-                heapq.heappush(leave_nodes, parent)
+                heapq.heappush(
+                    heap,
+                    (
+                        self._is_protected(parent, protected_nodes),
+                        self._node_hotness(parent, hotness_scores),
+                        parent.timestamp,
+                        parent.uuid,
+                        parent,
+                    ),
+                )
 
         return torch.cat(evicted_indices)
+
+    def _is_protected(self, node: RadixTreeNode, protected_nodes: set[RadixTreeNode]) -> bool:
+        while not node.is_root():
+            if node in protected_nodes:
+                return True
+            node = node.parent
+        return False
+
+    def _node_hotness(
+        self, node: RadixTreeNode, hotness_scores: dict[RadixTreeNode, float]
+    ) -> float:
+        score = 0.0
+        while not node.is_root():
+            score = max(score, hotness_scores.get(node, 0.0))
+            node = node.parent
+        return score
 
     def reset(self) -> None:
         raise NotImplementedError("RadixManager.reset is not implemented")
