@@ -125,6 +125,19 @@ load and regressed overload throughput by 1.14%.
   paired survivor, and the current request/cache API has no reliable workload-level identity to
   replace them. Keep all generic defaults disabled; reopen only with a new identity/admission API
   and a fresh three-seed open-loop validation.
+- The next optimization is experiment 031: auto-size the PyNCCL symmetric buffer from the actual
+  scheduler forward-batch budget. The current bound follows Qwen3-32B's 40,960-token context and
+  can reserve roughly 400 MiB per TP rank, while the calibrated scheduler admits at most 8,192
+  prefill tokens per batch. Treat this as a memory-accounting optimization with a direct NCCL
+  fallback; require correctness, throughput, latency, and per-rank memory evidence before changing
+  the default.
+
+## Next experiment
+
+Experiment 031: PyNCCL communication-buffer auto-sizing. First profile the current reservation and
+then compare fixed 96/128 MiB caps with a scheduler-derived bound on Qwen3-32B BF16 TP=4. Run a
+three-seed online confirmation only for a candidate that passes the pre-registered memory,
+correctness, throughput, and latency rules.
 
 ## Success criteria
 

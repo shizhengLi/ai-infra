@@ -86,7 +86,7 @@
 
 ## Next experiment
 
-Experiment 030 is complete. Reopen this branch only after adding an explicit workload-level
-identity/admission API and validating it with a fresh three-seed open-loop matrix. Until then,
-freeze adaptive reserve to the phase-batched max-128 profile and keep all experimental defaults
-disabled.
+Experiment 030 is complete. The next optimization is experiment 031: derive the PyNCCL symmetric
+communication buffer from the scheduler's real forward-batch budget instead of the model's maximum
+context window. Measure per-rank memory reclaimed, KV capacity, startup, throughput, and latency;
+keep the adaptive-reserve profile frozen and all generic cache heuristics disabled while doing so.
