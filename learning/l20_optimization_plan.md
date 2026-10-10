@@ -163,13 +163,39 @@ load and regressed overload throughput by 1.14%.
   -9.68%, and P90 TTFT +1.13%. Reject it as a deployment optimization; retain only the
   default-disabled research flag.
 
+## Experiment 043 result
+
+Experiment 043 added an explicit `--disable-bf16-reduced-precision-reduction` control and paired it
+against the default BF16 GEMM reduction mode. On the Qwen3-32B TP4 Graph matrix, treatment changed
+throughput -0.37%/-0.44%/-0.21% at C=1/8/32 and changed P90 TPOT +0.17%/+0.19%/+6.73%. Reject it as
+an optimization; retain the switch only as a default-disabled diagnostic control.
+
+## Experiment 044 result
+
+Experiment 044 grouped fresh experiment-043 CUDA-event telemetry by padded Graph shape. Padded 24
+and padded 32 were the only shapes with model intervals above 30 ms: 20/20 and 130/130 control
+events, respectively. Padded 32 averaged 34.082 ms and represented logical batches 28/31/32;
+padded 24 averaged 32.541 ms and represented logical batches 20/24. Do not change sampler, copy,
+collective, or generic Graph padding behavior based on this attribution.
+
+## Experiment 045 result
+
+Experiment 045 added a default-disabled `--cuda-graph-disable-bs 24 32` eager fallback. It changed
+C=32 throughput -0.11% and P90 TPOT +3.72% (221.709 -> 229.953 ms), failing the strict tail gate.
+Reject the eager fallback; keep the diagnostic switch but preserve Graph execution by default.
+
+## Experiment 046 result
+
+Experiment 046 added opt-in `MiniSGL.SchedulerForward.decode.bs=*` NVTX ranges and captured padded
+24/32 Graph replays. SchedulerForward was about 59.6/59.4 ms while nested GraphReplay was about
+56.4/56.2 ms; kernel composition remained NCCL 51.5% plus three BF16 GEMM classes about 46.7%.
+No new shape-specific synchronization kernel was found. Do not add another scheduler barrier or
+priority policy.
+
 ## Next experiment
 
-Experiment 042: re-measure direct PyNCCL versus symmetric PyNCCL for the padded-32 Graph workload.
-Experiment 041's filtered Nsight interval attributed 52.0% of summed GPU kernel time to NCCL
-all-reduce, with three BF16 GEMM classes contributing 46.0%. This is a measured residual bottleneck,
-but earlier direct Graph tests regressed P90, so the new paired experiment must use the strict C=32 P90
-gate and check C=1/8 regressions. Sampling, token-copy, and shape-only changes remain deprioritized.
+Experiment 047: target the measured NCCL/BF16 GEMM implementation with one isolated kernel/collective
+change, preserving symmetric Graph defaults and the strict C=32 P90 gate.
 
 ## Success criteria
 

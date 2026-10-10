@@ -43,6 +43,11 @@ class Engine:
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         _adjust_config(config)
 
+        if config.dtype == torch.bfloat16:
+            torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = (
+                config.allow_bf16_reduced_precision_reduction
+            )
+
         self.device = torch.device(f"cuda:{config.tp_info.rank}")
         torch.cuda.set_device(self.device)
         torch.manual_seed(42)
@@ -114,6 +119,7 @@ class Engine:
             attn_backend=self.attn_backend,
             cuda_graph_bs=config.cuda_graph_bs,
             cuda_graph_max_bs=config.cuda_graph_max_bs,
+            cuda_graph_disable_bs=config.cuda_graph_disable_bs,
             max_running_req=config.max_running_req,
             free_memory=init_free_memory,
             max_seq_len=aligned_max_seq_len,

@@ -90,6 +90,7 @@ class GraphRunner:
         attn_backend: BaseAttnBackend,
         cuda_graph_bs: List[int] | None,
         cuda_graph_max_bs: int | None,
+        cuda_graph_disable_bs: List[int] | None,
         max_running_req: int,
         free_memory: int,
         max_seq_len: int,
@@ -105,6 +106,9 @@ class GraphRunner:
         self.attn_backend = attn_backend
         self.max_graph_bs = max(cuda_graph_bs) if cuda_graph_bs else 0
         self.graph_bs_list = sorted(cuda_graph_bs)
+        self.disabled_graph_bs = {
+            bs for bs in (cuda_graph_disable_bs or []) if bs in self.graph_bs_list
+        }
         self.dummy_req = dummy_req
         self.stream = stream
         self.device = device
@@ -155,7 +159,11 @@ class GraphRunner:
         logger.info_rank0(f"Free GPU memory after capturing CUDA graphs: {mem_GB(free_memory)}")
 
     def can_use_cuda_graph(self, batch: Batch) -> bool:
-        return batch.is_decode and batch.size <= self.max_graph_bs
+        if not batch.is_decode or batch.size > self.max_graph_bs:
+            return False
+        if hasattr(batch, "padded_reqs"):
+            return batch.padded_size in self.graph_map and batch.padded_size not in self.disabled_graph_bs
+        return True
 
     def replay(self, batch: Batch) -> torch.Tensor:
         assert self.can_use_cuda_graph(batch)
@@ -173,7 +181,10 @@ class GraphRunner:
             if self.can_use_cuda_graph(batch)
             else batch.size
         )
-        batch.padded_reqs = batch.reqs + [self.dummy_req] * (padded_size - batch.size)
+        if padded_size in self.disabled_graph_bs:
+            batch.padded_reqs = batch.reqs
+        else:
+            batch.padded_reqs = batch.reqs + [self.dummy_req] * (padded_size - batch.size)
 
     # NOTE: This must be called before freeing NCCL resources to prevent program hang
     def destroy_cuda_graphs(self) -> None:

@@ -152,13 +152,12 @@ batches. At C=32, throughput changed -0.32%, P90 TPOT changed +0.07%, P99.9 TPOT
 and P90 TTFT rose 1.13%. The P90 gate failed; reject the profile as a deployment optimization and
 keep it only as a default-disabled research flag.
 
-## Next experiment
+## Sequence continuation
 
-Experiment 041 completed kernel/NVTX attribution for padded-32 Graph replay. In the filtered replay
-interval, NCCL all-reduce consumed 52.0% of summed GPU kernel time and three BF16 GEMM classes another
-46.0%; sampler/copy and capture-shape branches remain deprioritized. Experiment 042 should re-measure
-direct PyNCCL versus symmetric PyNCCL under this Graph workload with a strict C=32 P90 gate. The
-adaptive-reserve profile remains frozen and generic cache heuristics remain disabled.
+Experiments 039-043 moved from timing instrumentation to Graph kernel attribution, collective
+validation, and a BF16 GEMM control. Experiment 043 rejected the reduction-mode change; the next
+experiment is shape-level Graph replay timing and scheduler/kernel attribution. The adaptive-reserve
+profile remains frozen and generic cache heuristics remain disabled.
 
 ## Experiment 039 result
 
@@ -183,3 +182,44 @@ Experiment 041 added an opt-in `MiniSGL.GraphReplay.bs=*` NVTX range and capture
 replay with Nsight Systems. The filtered interval contained 29.629 ms of summed GPU kernel time:
 52.0% NCCL all-reduce, 25.1%/16.2%/4.7% three BF16 GEMM classes, and 1.4% norms/attention/activation
 and copies. Keep defaults unchanged; use this measured communication residual to define experiment 042.
+
+## Experiment 042 result
+
+Experiment 042 re-measured direct PyNCCL versus symmetric PyNCCL with CUDA Graphs enabled. Direct
+communication improved throughput 1.17%/8.00%/13.39% at C=1/8/32, but C=32 P90 TPOT regressed
+14.96% (210.150 -> 241.596 ms). Padded-32 model timing also rose 1.509 ms. Reject direct PyNCCL for
+Graph mode; retain it only as an explicit graph-disabled profile.
+
+## Experiment 043 result
+
+Experiment 043 isolated PyTorch's BF16 reduced-precision reduction mode with the opt-in
+`--disable-bf16-reduced-precision-reduction` flag. On Qwen3-32B TP4 with CUDA Graphs, treatment
+throughput changed -0.37%/-0.44%/-0.21% at C=1/8/32 and P90 TPOT changed +0.17%/+0.19%/+6.73%.
+It failed the strict C=32 tail gate and is rejected as an optimization. The flag remains available
+only as a default-disabled diagnostic control; the next experiment is shape-level Graph replay
+timing and scheduler/kernel attribution.
+
+## Experiment 044 result
+
+Experiment 044 grouped the fresh experiment-043 CUDA-event traces by padded Graph shape. Padded 24
+and padded 32 were the only shapes above 30 ms: 20/20 and 130/130 control events. Padded 32 averaged
+34.082 ms and represented logical batches 28/31/32; padded 24 averaged 32.541 ms and represented
+logical batches 20/24. This confirms a shape-specific GPU cost, not sampler or host-copy overhead.
+Do not change generic Graph padding or collective semantics; experiment 045 must target the padded
+24/32 replay path and pass the C=32 P90 gate.
+
+## Experiment 045 result
+
+Experiment 045 tested a default-disabled eager fallback for padded-24/32 Graph batches. Treatment
+changed C=32 throughput -0.11% and P90 TPOT +3.72% (221.709 -> 229.953 ms), so it failed the strict
+tail gate. Keep `--cuda-graph-disable-bs` as a diagnostic switch only; Graph execution remains the
+default. The next experiment should add Nsight markers around the padded-24/32 replay and scheduler
+interval to identify a concrete kernel or synchronization target.
+
+## Experiment 046 result
+
+Experiment 046 added an opt-in scheduler NVTX range and captured a short Nsight Systems probe.
+Padded-24/32 SchedulerForward ranges were about 59.6/59.4 ms, with nested GraphReplay about
+56.4/56.2 ms. Kernel composition stayed NCCL 51.5% plus three BF16 GEMM classes about 46.7%; no
+new shape-specific synchronization kernel appeared. Do not add another scheduler barrier. The next
+experiment should isolate one NCCL or BF16 GEMM implementation change under the strict C=32 gate.

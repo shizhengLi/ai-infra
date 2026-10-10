@@ -1,6 +1,8 @@
 import unittest
 
+from minisgl.core import Batch
 from minisgl.engine.graph import _determine_cuda_graph_bs
+from minisgl.engine.graph import GraphRunner
 
 
 class DetermineCudaGraphBatchSizesTest(unittest.TestCase):
@@ -40,6 +42,24 @@ class DetermineCudaGraphBatchSizesTest(unittest.TestCase):
             ),
             [2, 8],
         )
+
+    def test_disabled_shapes_fall_back_without_padding(self) -> None:
+        runner = GraphRunner.__new__(GraphRunner)
+        runner.max_graph_bs = 32
+        runner.graph_bs_list = [1, 2, 4, 8, 16, 24, 32]
+        runner.graph_map = {size: object() for size in runner.graph_bs_list}
+        runner.disabled_graph_bs = {24, 32}
+        runner.dummy_req = object()
+
+        eager_batch = Batch(reqs=[object()] * 20, phase="decode")
+        runner.pad_batch(eager_batch)
+        self.assertEqual(eager_batch.padded_size, eager_batch.size)
+        self.assertFalse(runner.can_use_cuda_graph(eager_batch))
+
+        graph_batch = Batch(reqs=[object()] * 16, phase="decode")
+        runner.pad_batch(graph_batch)
+        self.assertEqual(graph_batch.padded_size, 16)
+        self.assertTrue(runner.can_use_cuda_graph(graph_batch))
 
 
 if __name__ == "__main__":

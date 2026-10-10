@@ -130,6 +130,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--disable-bf16-reduced-precision-reduction",
+        action="store_false",
+        dest="allow_bf16_reduced_precision_reduction",
+        help=(
+            "Disable reduced-precision BF16 GEMM reductions. This is an opt-in "
+            "performance/accuracy experiment; the default preserves PyTorch behavior."
+        ),
+    )
+
+    parser.add_argument(
         "--host",
         type=str,
         dest="server_host",
@@ -159,6 +169,14 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
         nargs="+",
         default=ServerArgs.cuda_graph_bs,
         help="Explicit CUDA graph batch sizes. Overrides --cuda-graph-max-bs shape generation.",
+    )
+
+    parser.add_argument(
+        "--cuda-graph-disable-bs",
+        type=int,
+        nargs="+",
+        default=ServerArgs.cuda_graph_disable_bs,
+        help="CUDA graph batch sizes to execute eagerly. Intended for targeted profiling only.",
     )
 
     parser.add_argument(

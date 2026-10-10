@@ -1,0 +1,35 @@
+
+NOTICE: Existing SQLite export found: learning/results/046_graph_scheduler.sqlite
+        It is assumed file was previously exported from: learning/results/046_graph_scheduler.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [learning/results/046_graph_scheduler.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-x64/reports/nvtx_pushpop_sum.py](nvtx=MiniSGL.SchedulerForward.decode.bs=24)... 
+
+ ** NVTX Push/Pop Range Summary (nvtx_pushpop_sum):
+
+ Time (%)  Total Time (ns)  Instances   Avg (ns)    Med (ns)   Min (ns)  Max (ns)  StdDev (ns)                  Range                 
+ --------  ---------------  ---------  ----------  ----------  --------  --------  -----------  --------------------------------------
+     51.2         59599586          1  59599586.0  59599586.0  59599586  59599586          0.0  :MiniSGL.SchedulerForward.decode.bs=24
+     48.5         56425122          1  56425122.0  56425122.0  56425122  56425122          0.0  :MiniSGL.GraphReplay.bs=24            
+      0.3           388388          2    194194.0    194194.0    191047    197341       4450.5  :Sampler                              
+
+Processing [learning/results/046_graph_scheduler.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-x64/reports/cuda_gpu_kern_sum.py](nvtx=MiniSGL.SchedulerForward.decode.bs=24)... 
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)                                                  Name                                                
+ --------  ---------------  ---------  ---------  ---------  --------  --------  -----------  ----------------------------------------------------------------------------------------------------
+     51.6         30934290         24  1288928.8  1289314.0   1276546   1302210       6388.8  ncclSymDevKernel_AllReduce_RSxLD_AGxST_sum_bf16(ncclSymDevArgs)                                     
+     25.8         15464794         13  1189599.5  1189536.0   1187360   1191552       1005.5  ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_tn                                                      
+     15.8          9443934         24   393497.3   391338.0    193669    594128     203149.0  ampere_bf16_s1688gemm_bf16_64x128_sliced1x2_ldg8_f2f_tn                                             
+      4.9          2923472         12   243622.7   243702.5    242471    244263        495.5  ampere_bf16_s1688gemm_bf16_128x64_sliced1x2_ldg8_f2f_tn                                             
+      0.8           452329         24    18847.0    18880.5     13376     24161       4830.7  kernel_cutlass_kernel_flashinfernormkernelsfused_add_rmsnormFusedAddRMSNormKernel_object_at__tensor…
+      0.6           378535         12    31544.6    31552.5     31297     31808        143.0  void flashinfer::BatchPrefillWithPagedKVCacheKernel<flashinfer::KernelTraits<(flashinfer::MaskMode)…
+      0.3           168199         12    14016.6    14016.5     13921     14081         52.9  void flashinfer::activation::act_and_mul_kernel<__nv_bfloat16, &silu>(T1 *, const T1 *, int)        
+      0.1            71746         24     2989.4     2912.0      1760      4416       1241.8  kernel_cutlass_kernel_flashinfernormkernelsrmsnormQKRMSNormKernel_object_at__tensorptrbf16gmemalign…
+      0.1            64194         12     5349.5     5312.5      5216      5568         91.4  void flashinfer::BatchQKApplyRotaryPosIdsCosSinCacheHeadParallelismKernel<(bool)0, (unsigned int)12…
+      0.0            27489         12     2290.8     2304.0      2240      2336         25.4  void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<c10::BFloat16>, std:…
+      0.0            22112         12     1842.7     1840.0      1728      2016         82.4  void <unnamed>::store_kv_cache<(unsigned long)128, (unsigned long)1, (bool)0, (unsigned long)512, i…
+      0.0             4352          1     4352.0     4352.0      4352      4352          0.0  void at::native::index_elementwise_kernel<(int)128, (int)4, void at::native::gpu_index_kernel<void …
+      0.0             2464          1     2464.0     2464.0      2464      2464          0.0  void at::native::<unnamed>::CatArrayBatchedCopy_alignedK_contig<at::native::<unnamed>::OpaqueType<(…
+

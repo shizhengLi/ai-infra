@@ -454,11 +454,18 @@ class Scheduler(SchedulerIOMixin):
             )
             timing_events[0].record(self.engine.stream)
         batch.input_ids = self.token_pool[input_mapping]
-        forward_output = self.engine.forward_batch(
-            batch,
-            sample_args,
-            profile_timing=self.prefill_telemetry_enabled and self._is_primary_rank,
-        )
+        profile_timing = self.prefill_telemetry_enabled and self._is_primary_rank
+        if profile_timing and batch.is_decode:
+            with torch.cuda.nvtx.range(
+                f"MiniSGL.SchedulerForward.decode.bs={batch.padded_size}"
+            ):
+                forward_output = self.engine.forward_batch(
+                    batch, sample_args, profile_timing=True
+                )
+        else:
+            forward_output = self.engine.forward_batch(
+                batch, sample_args, profile_timing=profile_timing
+            )
         self.token_pool[output_mapping] = forward_output.next_tokens_gpu
         if timing_events is not None:
             timing_events[1].record(self.engine.stream)

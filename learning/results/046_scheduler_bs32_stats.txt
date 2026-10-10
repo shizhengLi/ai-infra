@@ -1,0 +1,36 @@
+Generating SQLite file learning/results/046_graph_scheduler.sqlite from learning/results/046_graph_scheduler.nsys-rep
+Processing [learning/results/046_graph_scheduler.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-x64/reports/nvtx_pushpop_sum.py](nvtx=MiniSGL.SchedulerForward.decode.bs=32)... 
+
+ ** NVTX Push/Pop Range Summary (nvtx_pushpop_sum):
+
+ Time (%)  Total Time (ns)  Instances   Avg (ns)    Med (ns)   Min (ns)  Max (ns)  StdDev (ns)                  Range                 
+ --------  ---------------  ---------  ----------  ----------  --------  --------  -----------  --------------------------------------
+     51.2         59418498          1  59418498.0  59418498.0  59418498  59418498          0.0  :MiniSGL.SchedulerForward.decode.bs=32
+     48.4         56195417          1  56195417.0  56195417.0  56195417  56195417          0.0  :MiniSGL.GraphReplay.bs=32            
+      0.3           387215          2    193607.5    193607.5    190348    196867       4609.6  :Sampler                              
+
+Processing [learning/results/046_graph_scheduler.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-x64/reports/nvtx_gpu_proj_sum.py](nvtx=MiniSGL.SchedulerForward.decode.bs=32)... 
+
+ ** NVTX GPU Projection Summary (nvtx_gpu_proj_sum):
+
+Report was successfully run, but no data was returned.
+
+Processing [learning/results/046_graph_scheduler.sqlite] with [/opt/nvidia/nsight-systems/2025.3.2/host-linux-x64/reports/cuda_gpu_kern_sum.py](nvtx=MiniSGL.SchedulerForward.decode.bs=32)... 
+
+ ** CUDA GPU Kernel Summary (cuda_gpu_kern_sum):
+
+ Time (%)  Total Time (ns)  Instances  Avg (ns)   Med (ns)   Min (ns)  Max (ns)  StdDev (ns)                                                  Name                                                
+ --------  ---------------  ---------  ---------  ---------  --------  --------  -----------  ----------------------------------------------------------------------------------------------------
+     51.5         30800748         24  1283364.5  1284498.0   1272834   1298466       6329.8  ncclSymDevKernel_AllReduce_RSxLD_AGxST_sum_bf16(ncclSymDevArgs)                                     
+     25.9         15465015         13  1189616.5  1189471.0   1188287   1190752        772.1  ampere_bf16_s16816gemm_bf16_128x64_ldg8_f2f_tn                                                      
+     15.8          9436060         24   393169.2   392010.5    194021    594416     202947.9  ampere_bf16_s1688gemm_bf16_64x128_sliced1x2_ldg8_f2f_tn                                             
+      4.9          2922479         12   243539.9   243590.0    242854    244295        486.0  ampere_bf16_s1688gemm_bf16_128x64_sliced1x2_ldg8_f2f_tn                                             
+      0.8           454576         24    18940.7    19041.0     13664     24257       4818.2  kernel_cutlass_kernel_flashinfernormkernelsfused_add_rmsnormFusedAddRMSNormKernel_object_at__tensor…
+      0.6           377576         12    31464.7    31409.0     31329     31649        114.3  void flashinfer::BatchPrefillWithPagedKVCacheKernel<flashinfer::KernelTraits<(flashinfer::MaskMode)…
+      0.3           167783         12    13981.9    13984.0     13921     14080         41.9  void flashinfer::activation::act_and_mul_kernel<__nv_bfloat16, &silu>(T1 *, const T1 *, int)        
+      0.1            72065         24     3002.7     2944.0      1760      4321       1254.2  kernel_cutlass_kernel_flashinfernormkernelsrmsnormQKRMSNormKernel_object_at__tensorptrbf16gmemalign…
+      0.1            63809         12     5317.4     5328.5      5184      5408         69.4  void flashinfer::BatchQKApplyRotaryPosIdsCosSinCacheHeadParallelismKernel<(bool)0, (unsigned int)12…
+      0.0            27552         12     2296.0     2304.0      2240      2336         36.4  void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<c10::BFloat16>, std:…
+      0.0            22240         12     1853.3     1840.0      1760      2016         76.5  void <unnamed>::store_kv_cache<(unsigned long)128, (unsigned long)1, (bool)0, (unsigned long)512, i…
+      0.0             3328          1     3328.0     3328.0      3328      3328          0.0  void at::native::<unnamed>::CatArrayBatchedCopy_alignedK_contig<at::native::<unnamed>::OpaqueType<(…
+
