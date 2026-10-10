@@ -165,11 +165,11 @@ load and regressed overload throughput by 1.14%.
 
 ## Next experiment
 
-Experiment 041: attribute the remaining padded-32 Graph replay with NVTX/kernel-level timing. Explicit
-20/28 Graph capture shapes in experiment 040 reduced padded-32 batches but did not move C=32 P90
-(-0.003%) or the roughly 34.1 ms padded-32 model time. Sampling and token-copy changes remain
-deprioritized; do not reopen asynchronous communication work without a new measured residual
-bottleneck.
+Experiment 042: re-measure direct PyNCCL versus symmetric PyNCCL for the padded-32 Graph workload.
+Experiment 041's filtered Nsight interval attributed 52.0% of summed GPU kernel time to NCCL
+all-reduce, with three BF16 GEMM classes contributing 46.0%. This is a measured residual bottleneck,
+but earlier direct Graph tests regressed P90, so the new paired experiment must use the strict C=32 P90
+gate and check C=1/8 regressions. Sampling, token-copy, and shape-only changes remain deprioritized.
 
 ## Success criteria
 

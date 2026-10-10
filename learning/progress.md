@@ -154,11 +154,11 @@ keep it only as a default-disabled research flag.
 
 ## Next experiment
 
-Experiment 040 rejected explicit 20/28 Graph capture shapes. The treatment reduced padded-32 decode
-batches from 130 to 120 and added padded-20/28 batches, but C=32 P90 TPOT changed only -0.003% and
-padded-32 model time stayed about 34.1 ms. Experiment 041 should use kernel/NVTX attribution inside
-the padded-32 replay; do not continue shape-only tuning. The adaptive-reserve profile remains frozen
-and generic cache heuristics remain disabled.
+Experiment 041 completed kernel/NVTX attribution for padded-32 Graph replay. In the filtered replay
+interval, NCCL all-reduce consumed 52.0% of summed GPU kernel time and three BF16 GEMM classes another
+46.0%; sampler/copy and capture-shape branches remain deprioritized. Experiment 042 should re-measure
+direct PyNCCL versus symmetric PyNCCL under this Graph workload with a strict C=32 P90 gate. The
+adaptive-reserve profile remains frozen and generic cache heuristics remain disabled.
 
 ## Experiment 039 result
 
@@ -176,3 +176,10 @@ C=32 throughput +0.06% and P90 TPOT -0.003%, while C=1/C=8 throughput changed -0
 Telemetry confirmed the shape distribution moved from 130 padded-32 decode batches to 120, but the
 remaining padded-32 model time was unchanged (34.073 -> 34.106 ms). Reject the shape list as a
 deployment optimization; retain the CLI for future profiling.
+
+## Experiment 041 result
+
+Experiment 041 added an opt-in `MiniSGL.GraphReplay.bs=*` NVTX range and captured a padded-32 Graph
+replay with Nsight Systems. The filtered interval contained 29.629 ms of summed GPU kernel time:
+52.0% NCCL all-reduce, 25.1%/16.2%/4.7% three BF16 GEMM classes, and 1.4% norms/attention/activation
+and copies. Keep defaults unchanged; use this measured communication residual to define experiment 042.

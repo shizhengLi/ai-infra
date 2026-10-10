@@ -162,7 +162,9 @@ class GraphRunner:
         self.buffer.copy_from(batch)
         g = self.graph_map[batch.padded_size]
         self.attn_backend.prepare_for_replay(batch)
-        g.replay()
+        # Keep the replay interval filterable in Nsight without changing graph contents.
+        with torch.cuda.nvtx.range(f"MiniSGL.GraphReplay.bs={batch.padded_size}"):
+            g.replay()
         return self.buffer.logits[: batch.size]
 
     def pad_batch(self, batch: Batch) -> None:
