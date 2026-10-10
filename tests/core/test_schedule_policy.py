@@ -1,4 +1,71 @@
+from types import SimpleNamespace
+
 from minisgl.scheduler.policy import PrefillBudgetPolicy, PrefillSchedulePolicy, PrefillTelemetry
+from minisgl.scheduler.scheduler import Scheduler
+
+
+def _guard_scheduler(*, guard_size: int, padded_size: int, prefill_runnable: bool):
+    batch = SimpleNamespace(
+        is_decode=True,
+        padded_size=padded_size,
+        padded_reqs=(),
+    )
+    graph_runner = SimpleNamespace(can_use_cuda_graph=lambda candidate: candidate is batch)
+    return SimpleNamespace(
+        decode_result_before_prefill=False,
+        decode_graph_tail_prefill_batch_size=guard_size,
+        _decode_graph_tail_priority_consumed=False,
+        prefill_manager=SimpleNamespace(runnable=prefill_runnable),
+        decode_manager=SimpleNamespace(runnable=True),
+        engine=SimpleNamespace(graph_runner=graph_runner),
+    ), (SimpleNamespace(batch=batch), None)
+
+
+def test_graph_tail_guard_matches_padded_batch() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=32, padded_size=32, prefill_runnable=True
+    )
+    assert Scheduler._should_process_decode_before_prefill(scheduler, last_data)
+
+
+def test_graph_tail_guard_ignores_other_batch_sizes() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=32, padded_size=24, prefill_runnable=True
+    )
+    assert not Scheduler._should_process_decode_before_prefill(scheduler, last_data)
+
+
+def test_graph_tail_guard_requires_pending_prefill() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=32, padded_size=32, prefill_runnable=False
+    )
+    assert not Scheduler._should_process_decode_before_prefill(scheduler, last_data)
+
+
+def test_graph_tail_guard_zero_preserves_default_overlap() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=0, padded_size=32, prefill_runnable=True
+    )
+    assert not Scheduler._should_process_decode_before_prefill(scheduler, last_data)
+
+
+def test_graph_tail_priority_matches_padded_batch_without_synchronizing() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=0, padded_size=32, prefill_runnable=True
+    )
+    scheduler.decode_graph_tail_prefill_priority_batch_size = 32
+    assert Scheduler._should_prioritize_decode_before_prefill(scheduler, last_data)
+    scheduler._decode_graph_tail_priority_consumed = True
+    assert not Scheduler._should_prioritize_decode_before_prefill(scheduler, last_data)
+
+
+def test_graph_tail_priority_requires_decode_runnable() -> None:
+    scheduler, last_data = _guard_scheduler(
+        guard_size=0, padded_size=32, prefill_runnable=True
+    )
+    scheduler.decode_graph_tail_prefill_priority_batch_size = 32
+    scheduler.decode_manager.runnable = False
+    assert not Scheduler._should_prioritize_decode_before_prefill(scheduler, last_data)
 
 
 def test_unlimited_prefill_priority() -> None:

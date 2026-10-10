@@ -115,6 +115,17 @@ class Scheduler(SchedulerIOMixin):
         self._pipeline_batch_ids: dict[int, int] = {}
         self._next_pipeline_batch_id = 0
         self.decode_result_before_prefill = config.decode_result_before_prefill
+        if config.decode_graph_tail_prefill_batch_size < 0:
+            raise ValueError("decode_graph_tail_prefill_batch_size must be non-negative")
+        self.decode_graph_tail_prefill_batch_size = config.decode_graph_tail_prefill_batch_size
+        if config.decode_graph_tail_prefill_priority_batch_size < 0:
+            raise ValueError(
+                "decode_graph_tail_prefill_priority_batch_size must be non-negative"
+            )
+        self.decode_graph_tail_prefill_priority_batch_size = (
+            config.decode_graph_tail_prefill_priority_batch_size
+        )
+        self._decode_graph_tail_priority_consumed = False
         self.schedule_policy = PrefillSchedulePolicy(config.max_prefill_streak)
         # self.config = config
 
@@ -143,16 +154,14 @@ class Scheduler(SchedulerIOMixin):
         for msg in self.receive_msg(blocking=blocking):
             self._process_one_msg(msg)
 
-        if (
-            self.decode_result_before_prefill
-            and last_data is not None
-            and last_data[0].batch.is_decode
-            and self.prefill_manager.runnable
-        ):
+        if self._should_process_decode_before_prefill(last_data):
             self._process_last_data(last_data)
             last_data = None
 
-        forward_input = self._schedule_next_batch()
+        force_decode = self._should_prioritize_decode_before_prefill(last_data)
+        if force_decode:
+            self._decode_graph_tail_priority_consumed = True
+        forward_input = self._schedule_next_batch(force_decode=force_decode)
         ongoing_data = None
         if forward_input is not None:
             with self.engine_stream_ctx:  # run the batch in the engine's stream
@@ -162,6 +171,39 @@ class Scheduler(SchedulerIOMixin):
         self._process_last_data(last_data)
         self._flush_cache_telemetry("periodic", min_new_operations=CACHE_TELEMETRY_FLUSH_OPERATIONS)
         return ongoing_data
+
+    def _should_process_decode_before_prefill(self, last_data: ForwardData | None) -> bool:
+        if last_data is None or not last_data[0].batch.is_decode:
+            return False
+        if not self.prefill_manager.runnable:
+            return False
+        if self.decode_result_before_prefill:
+            return True
+        batch = last_data[0].batch
+        guard_size = self.decode_graph_tail_prefill_batch_size
+        return (
+            guard_size > 0
+            and self.engine.graph_runner.can_use_cuda_graph(batch)
+            and hasattr(batch, "padded_reqs")
+            and batch.padded_size == guard_size
+        )
+
+    def _should_prioritize_decode_before_prefill(self, last_data: ForwardData | None) -> bool:
+        if last_data is None or not last_data[0].batch.is_decode:
+            self._decode_graph_tail_priority_consumed = False
+            return False
+        if not self.prefill_manager.runnable or not self.decode_manager.runnable:
+            self._decode_graph_tail_priority_consumed = False
+            return False
+        batch = last_data[0].batch
+        priority_size = self.decode_graph_tail_prefill_priority_batch_size
+        matches = (
+            priority_size > 0
+            and self.engine.graph_runner.can_use_cuda_graph(batch)
+            and hasattr(batch, "padded_reqs")
+            and batch.padded_size == priority_size
+        )
+        return matches and not self._decode_graph_tail_priority_consumed
 
     def normal_loop(self) -> None:
         blocking = not (self.prefill_manager.runnable or self.decode_manager.runnable)
@@ -291,9 +333,11 @@ class Scheduler(SchedulerIOMixin):
             write_tuple=write_mapping,
         )
 
-    def _schedule_next_batch(self) -> ForwardInput | None:
+    def _schedule_next_batch(self, *, force_decode: bool = False) -> ForwardInput | None:
         # TODO: support other policies: e.g. DECODE first
-        if self.schedule_policy.prefer_decode(
+        if force_decode:
+            batch = self.decode_manager.schedule_next_batch()
+        elif self.schedule_policy.prefer_decode(
             prefill_runnable=self.prefill_manager.runnable,
             decode_runnable=self.decode_manager.runnable,
         ):
@@ -429,6 +473,10 @@ class Scheduler(SchedulerIOMixin):
                 batch_id=self._pipeline_batch_ids.get(id(batch)),
                 phase=batch.phase,
                 batch_size=batch.size,
+                padded_batch_size=(
+                    batch.padded_size if hasattr(batch, "padded_reqs") else None
+                ),
+                uses_cuda_graph=self.engine.graph_runner.can_use_cuda_graph(batch),
             )
         self._pipeline_events.append(payload)
 

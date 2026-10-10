@@ -135,13 +135,35 @@ load and regressed overload throughput by 1.14%.
   improved paired online throughput by 9.54%/11.82%/11.34% at concurrency 1/8/32 while reducing
   average TPOT 3.81%/7.00%/8.00%. Accept it as an explicit L20 TP=4 profile; keep the generic
   default unchanged until TP=8 online and CUDA Graph validation are complete.
+- Experiment 033 validated the direct path at TP8 and with CUDA Graphs. Graph-disabled TP8
+  throughput improved 10.20%/5.52%/5.26% at concurrency 1/8/32 with P90 TPOT improving at every
+  load. TP4 Graph mode improved throughput at C=8/32 but regressed P90 TPOT 4.49%/9.69%, so the
+  strict Graph gate failed. Accept direct PyNCCL only as an explicit graph-disabled L20 TP4/TP8
+  profile; keep generic and Graph-mode defaults unchanged.
+- Experiment 034 added two per-concurrency warmups and five steady-state repeats. Direct Graph mode
+  remained stable and improved throughput 1.34%/7.68%/13.45% at C=1/8/32, but P90 TPOT changed
+  -0.06%/+2.64%/+11.91%. The tail regression is real, not first-request noise. Close the collective
+  branch: keep direct PyNCCL explicit and graph-disabled until a new Graph scheduler hypothesis is
+  tested.
+- Experiment 035 added logical/padded batch telemetry. Symmetric and direct traces had identical
+  Graph-shape distributions; P90-tail activity concentrated in 20/24/28/31/32 logical batches that
+  replay padded 24/24/32/32/32 shapes. More than 30 ms scheduler completion intervals were dominated
+  by padded-32 samples, with direct mode about 0.4 ms slower. Investigate scheduler transitions
+  around padded 32 before changing Graph padding or collectives.
+- Experiment 036 tested a padded-32 result-before-prefill guard. Telemetry proved the five target
+  transitions moved prefill selection from 147.13 ms before decode result delivery to 0.52 ms after
+  it, but the new synchronization boundary raised C=32 P90 TPOT 28.69% while throughput changed
+  -0.22%. Reject the guard for deployment and keep its generic option disabled by default.
+- Experiment 037 tested a corrected one-shot, non-blocking decode priority. It added exactly five
+  decode turns at the five target boundaries, changed C=32 throughput -0.63%, P90 TPOT -0.41%, and
+  P99.9 TPOT -7.06%, with average TTFT +0.02%. Keep it as an explicit calibrated profile; require
+  an independent seed and longer-output confirmation before any default change.
 
 ## Next experiment
 
-Experiment 033: direct PyNCCL validation. Confirm the accepted TP=4 direct path at TP=8 and with
-CUDA Graphs enabled, then decide whether hardware-aware automatic selection is justified. Do not
-start asynchronous communication work unless the direct-path baseline leaves a measured residual
-collective bottleneck.
+Experiment 038: validate the opt-in one-turn decode-priority profile at an independent seed and
+longer output length. Do not reopen asynchronous communication work without a new measured residual
+bottleneck.
 
 ## Success criteria
 

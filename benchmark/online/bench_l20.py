@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-len", type=int, default=256)
     parser.add_argument("--concurrency", type=int, nargs="+", default=[1, 8, 32, 64])
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--steady-warmup-repeats",
+        type=int,
+        default=0,
+        help="unrecorded batch runs before each concurrency group",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--gpu-indices", default="0,1,2,3")
     parser.add_argument("--monitor-interval", type=float, default=0.5)
@@ -34,6 +40,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
     parser.add_argument("--server-max-prefill-streak", type=int, default=0)
     parser.add_argument("--server-decode-active-prefill-tokens", type=int, default=0)
+    parser.add_argument("--server-decode-graph-tail-prefill-batch-size", type=int, default=0)
+    parser.add_argument(
+        "--server-decode-graph-tail-prefill-priority-batch-size", type=int, default=0
+    )
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
     return parser.parse_args()
@@ -184,6 +194,8 @@ between the first `{config['output_len']}` token events and excludes the final O
 - Maximum prefill tokens: `{config['server_max_extend_tokens']}`
 - Maximum prefill streak: `{config['server_max_prefill_streak']}`
 - Decode-active prefill tokens: `{config['server_decode_active_prefill_tokens']}`
+- Decode Graph-tail prefill guard batch size: `{config['server_decode_graph_tail_prefill_batch_size']}`
+- Decode Graph-tail prefill priority batch size: `{config['server_decode_graph_tail_prefill_priority_batch_size']}`
 - GPUs monitored: `{config['gpu_indices']}`
 
 ## Workload
@@ -192,6 +204,7 @@ between the first `{config['output_len']}` token events and excludes the final O
 - Requested output: `{config['output_len']}` tokens with EOS ignored
 - Concurrency: `{config['concurrency']}`
 - Repeats: `{config['repeats']}`
+- Unrecorded steady-state warmup repeats per concurrency: `{config['steady_warmup_repeats']}`
 
 ## Aggregate results
 
@@ -204,8 +217,12 @@ Per-repeat measurements and raw stream timestamps are stored in the machine-read
 
 async def main() -> None:
     args = parse_args()
-    if args.repeats < 1 or min(args.input_len, args.output_len, *args.concurrency) < 1:
-        raise ValueError("lengths, concurrency, and repeats must be positive")
+    if (
+        args.repeats < 1
+        or args.steady_warmup_repeats < 0
+        or min(args.input_len, args.output_len, *args.concurrency) < 1
+    ):
+        raise ValueError("lengths and repeats must be positive; steady warmups must be non-negative")
 
     async with OpenAI(base_url=args.base_url, api_key="dummy") as client:
         models = await client.models.list()
@@ -220,6 +237,18 @@ async def main() -> None:
 
         runs: list[dict[str, Any]] = []
         for concurrency in args.concurrency:
+            for warmup_repeat in range(args.steady_warmup_repeats):
+                random.seed(args.seed + concurrency * 1000 - warmup_repeat - 1)
+                warmup_prompts = [
+                    generate_prompt(tokenizer, args.input_len) for _ in range(concurrency)
+                ]
+                await benchmark_one_batch(
+                    client,
+                    warmup_prompts,
+                    args.output_len,
+                    model,
+                    pbar=False,
+                )
             for repeat in range(args.repeats):
                 random.seed(args.seed + concurrency * 1000 + repeat)
                 prompts = [generate_prompt(tokenizer, args.input_len) for _ in range(concurrency)]
@@ -285,6 +314,7 @@ async def main() -> None:
             "output_len": args.output_len,
             "concurrency": args.concurrency,
             "repeats": args.repeats,
+            "steady_warmup_repeats": args.steady_warmup_repeats,
             "seed": args.seed,
             "gpu_indices": args.gpu_indices,
             "server_tp": args.server_tp,
@@ -293,6 +323,12 @@ async def main() -> None:
             "server_max_extend_tokens": args.server_max_extend_tokens,
             "server_max_prefill_streak": args.server_max_prefill_streak,
             "server_decode_active_prefill_tokens": args.server_decode_active_prefill_tokens,
+            "server_decode_graph_tail_prefill_batch_size": (
+                args.server_decode_graph_tail_prefill_batch_size
+            ),
+            "server_decode_graph_tail_prefill_priority_batch_size": (
+                args.server_decode_graph_tail_prefill_priority_batch_size
+            ),
         },
         "runs": runs,
         "aggregates": aggregates,

@@ -216,6 +216,26 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--decode-graph-tail-prefill-batch-size",
+        type=int,
+        default=ServerArgs.decode_graph_tail_prefill_batch_size,
+        help=(
+            "When positive, finish a previous CUDA-Graph decode result before submitting "
+            "prefill if its padded batch size matches this value. Zero disables the guard."
+        ),
+    )
+
+    parser.add_argument(
+        "--decode-graph-tail-prefill-priority-batch-size",
+        type=int,
+        default=ServerArgs.decode_graph_tail_prefill_priority_batch_size,
+        help=(
+            "When positive, prefer one decode batch before pending prefill after a matching "
+            "CUDA-Graph decode batch. Zero disables the non-blocking priority policy."
+        ),
+    )
+
+    parser.add_argument(
         "--prefill-telemetry-path",
         default=ServerArgs.prefill_telemetry_path,
         help="Optional JSONL path for cumulative prefill scheduling telemetry.",

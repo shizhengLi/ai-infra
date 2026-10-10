@@ -95,6 +95,6 @@ MINISGL_PYNCCL_MAX_BUFFER_SIZE=0 \
   python -m minisgl --model Qwen/Qwen3-32B --tp 4 ...
 ```
 
-Do not change the generic default until an online TP=8 matrix and graph-enabled validation are
-complete. The next experiment is direct-path confirmation at TP=8 and a graph-enabled TP=4 smoke
-test; only then should default selection be reconsidered.
+Experiment 033 completed the TP=8 and Graph checks. TP8 remained positive with Graphs disabled, but
+TP4 Graph P90 TPOT regressed. Keep the generic default unchanged and continue with the Graph-tail
+variance study in experiment 034.

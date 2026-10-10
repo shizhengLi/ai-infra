@@ -25,6 +25,8 @@
 | Global prefill bound | Complete, rejected | Reproduces 1.34s gap under 2304 active budget; global 2304 does not improve 70/72 light-load SLO |
 | Decode response visibility | Complete, accepted | Fresh held-out matrix passes 288/288 requests; max TPOT 1.12s -> 0.79s with at most 0.125% per-rate throughput cost |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
+| Graph-tail prefill guard | Complete, rejected | Ordering changed as intended, but C=32 P90 TPOT regressed 28.69% |
+| Graph-tail non-blocking priority | Complete, opt-in | One extra decode turn; C=32 P90 TPOT -0.41%, P99.9 -7.06%, throughput -0.63% |
 
 ## Decisions
 
@@ -101,8 +103,48 @@ concurrency 1/8/32 and reduced average TPOT 3.81%/7.00%/8.00%; P90 TPOT improved
 loads. Accept it as an explicit L20 TP=4 deployment profile, but keep the generic default unchanged
 pending TP=8 online and CUDA Graph validation.
 
+## Experiment 033 result
+
+Experiment 033 validated the direct path at TP8 and with CUDA Graphs. With Graphs disabled, TP8
+throughput improved 10.20%/5.52%/5.26% at concurrency 1/8/32 and P90 TPOT improved at all loads.
+With TP4 Graphs enabled through batch 64, throughput improved at C=8/32 but P90 TPOT regressed
+4.49%/9.69%, so the strict Graph-mode gate failed. Accept direct PyNCCL as an explicit graph-disabled
+L20 TP4/TP8 profile; keep generic and Graph-mode defaults unchanged.
+
+## Experiment 034 result
+
+Experiment 034 added per-concurrency steady-state warmups and repeated the TP4 Graph comparison five
+times. The direct path remained stable and improved throughput 1.34%/7.68%/13.45% at C=1/8/32,
+but P90 TPOT changed -0.06%/+2.64%/+11.91%. The Graph tail regression therefore persists after
+removing first-request noise. Keep direct PyNCCL explicit and graph-disabled; close the communication
+branch until a new Graph scheduler hypothesis is available.
+
+## Experiment 035 result
+
+Experiment 035 added Graph telemetry for logical and padded decode batch sizes. Symmetric and direct
+traces had the same 530 Graph batches; P90-tail activity concentrated in logical 20/24/28/31/32
+transitions that replay padded batch 24/24/32/32/32. Scheduler completion intervals above 30 ms were
+130 padded-32 samples in each treatment, with direct mode about 0.4 ms slower on average. Target
+padded-32 scheduler transitions next; do not alter Graph padding or collective defaults yet.
+
+## Experiment 036 result
+
+Experiment 036 added a default-disabled, padded-batch-specific result-before-prefill guard and ran a
+paired three-repeat TP4 Graph matrix. Telemetry confirmed all five target transitions moved pending
+prefill from 147.13 ms before decode result delivery to 0.52 ms after it, and decode
+`forward_return -> result_sent` fell from 320.15 ms to 206.14 ms. The synchronization boundary was
+counterproductive: C=32 throughput changed -0.22%, P99.9 TPOT improved 9.54%, but P90 TPOT regressed
+28.69% (210.55 -> 270.96 ms). Reject guard 32 and keep it disabled by default.
+
+## Experiment 037 result
+
+Experiment 037 replaced the synchronous guard with a one-shot, non-blocking decode priority at
+padded-32/prefill boundaries. The corrected treatment added exactly five decode batches (596 -> 601)
+without creating a decode-only loop. At C=32 it changed throughput -0.63%, P90 TPOT -0.41%, P99.9
+TPOT -7.06%, and average TTFT +0.02%. Keep the option as an explicit calibrated profile, but do not
+enable it by default until a second seed and longer-output validation confirm the small tail gain.
+
 ## Next experiment
 
-Experiment 033: validate the direct PyNCCL path at TP=8 and with CUDA Graphs enabled at TP=4 before
-reconsidering automatic default selection. The adaptive-reserve profile remains frozen and generic
-cache heuristics remain disabled.
+Experiment 038: validate the accepted priority profile on an independent seed and longer output
+length. The adaptive-reserve profile remains frozen and generic cache heuristics remain disabled.

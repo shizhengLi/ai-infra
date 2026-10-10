@@ -19,6 +19,8 @@ class SchedulerConfig(EngineConfig):
     decode_overload_prefill_threshold: int = 0
     max_prefill_streak: int = 0
     decode_result_before_prefill: bool = False
+    decode_graph_tail_prefill_batch_size: int = 0
+    decode_graph_tail_prefill_priority_batch_size: int = 0
     prefill_telemetry_path: str | None = None
     cache_telemetry_path: str | None = None
     cache_type: str = "radix"
