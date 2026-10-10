@@ -154,6 +154,14 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--cuda-graph-bs",
+        type=int,
+        nargs="+",
+        default=ServerArgs.cuda_graph_bs,
+        help="Explicit CUDA graph batch sizes. Overrides --cuda-graph-max-bs shape generation.",
+    )
+
+    parser.add_argument(
         "--num-tokenizer",
         "--tokenizer-count",
         type=int,

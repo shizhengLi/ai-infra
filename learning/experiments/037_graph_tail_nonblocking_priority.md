@@ -2,9 +2,10 @@
 
 ## Status
 
-Complete. The corrected one-turn priority policy is accepted as an explicit, workload-calibrated
-profile, but remains disabled by default. It avoids the synchronization regression from experiment
-036 and modestly improves the C=32 tail.
+Complete, superseded by experiment 038. The corrected one-turn priority policy avoided the
+synchronization regression from experiment 036 and improved the C=32 tail in the short-output
+matrix, but its independent long-output validation failed the P90 gate. It remains a research-only
+flag.
 
 ## Hypothesis
 
@@ -51,13 +52,12 @@ TTFT by 30.19%; that diagnostic run is retained but is not used as the experimen
 
 ## Decision
 
-- Keep the corrected one-turn policy behind the explicit priority-size option.
-- Do not enable it by default: the C=32 gain is only 0.41% at P90 TPOT and throughput falls 0.63%.
+- Keep the corrected one-turn policy behind the explicit priority-size option for research.
+- Do not enable it by default: experiment 038 found no P90 improvement at longer output length.
 - Do not combine it automatically with direct PyNCCL or experiment 036's synchronous guard.
 - Preserve the one-shot latch and unit tests to prevent starvation regressions.
 
-A future acceptance run should use a second independent seed and a longer output length before
-considering a default policy.
+Experiment 038 is the required independent long-output follow-up and closes the deployment case.
 
 ## Artifacts
 
@@ -68,4 +68,3 @@ considering a default policy.
 - `learning/experiments/037_graph_symmetric_control_seed3700042_raw.md`
 - `learning/experiments/037_graph_symmetric_priority32_corrected_seed3700042_raw.md`
 - Diagnostic superseded run: `learning/results/037_graph_symmetric_priority32_seed3700042.json`
-

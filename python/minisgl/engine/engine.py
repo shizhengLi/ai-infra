@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Dict, NamedTuple, Tuple
 
@@ -20,10 +21,20 @@ from .sample import BatchSamplingArgs, Sampler
 logger = init_logger(__name__)
 
 
+@dataclass
+class ForwardTiming:
+    model_start: torch.cuda.Event
+    model_end: torch.cuda.Event
+    sample_end: torch.cuda.Event
+    copy_end: torch.cuda.Event
+    execution_kind: str
+
+
 class ForwardOutput(NamedTuple):
     next_tokens_gpu: torch.Tensor
     next_tokens_cpu: torch.Tensor
     copy_done_event: torch.cuda.Event
+    timing: ForwardTiming | None = None
 
 
 class Engine:
@@ -189,22 +200,44 @@ class Engine:
 
         return min_free_memory, max_free_memory
 
-    def forward_batch(self, batch: Batch, args: BatchSamplingArgs) -> ForwardOutput:
+    def forward_batch(
+        self, batch: Batch, args: BatchSamplingArgs, *, profile_timing: bool = False
+    ) -> ForwardOutput:
         assert torch.cuda.current_stream() == self.stream
+        timing: ForwardTiming | None = None
+        model_start = model_end = sample_end = None
+        if profile_timing:
+            model_start = torch.cuda.Event(enable_timing=True)
+            model_end = torch.cuda.Event(enable_timing=True)
+            sample_end = torch.cuda.Event(enable_timing=True)
+            model_start.record(self.stream)
+        execution_kind = "graph" if self.graph_runner.can_use_cuda_graph(batch) else "eager"
         with self.ctx.forward_batch(batch):
-            if self.graph_runner.can_use_cuda_graph(batch):
+            if execution_kind == "graph":
                 logits = self.graph_runner.replay(batch)
             else:
                 logits = self.model.forward()
+        if model_end is not None:
+            model_end.record(self.stream)
 
         for req in batch.reqs:
             req.complete_one()
 
         next_tokens_gpu = self.sampler.sample(logits[: batch.size], args).to(torch.int32)
+        if sample_end is not None:
+            sample_end.record(self.stream)
         next_tokens_cpu = next_tokens_gpu.to("cpu", non_blocking=True)
-        copy_done_event = torch.cuda.Event()
+        copy_done_event = torch.cuda.Event(enable_timing=profile_timing)
         copy_done_event.record(self.stream)
-        return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event)
+        if model_start is not None and model_end is not None and sample_end is not None:
+            timing = ForwardTiming(
+                model_start=model_start,
+                model_end=model_end,
+                sample_end=sample_end,
+                copy_end=copy_done_event,
+                execution_kind=execution_kind,
+            )
+        return ForwardOutput(next_tokens_gpu, next_tokens_cpu, copy_done_event, timing)
 
     def shutdown(self) -> None:
         self.graph_runner.destroy_cuda_graphs()

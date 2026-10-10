@@ -158,11 +158,17 @@ load and regressed overload throughput by 1.14%.
   decode turns at the five target boundaries, changed C=32 throughput -0.63%, P90 TPOT -0.41%, and
   P99.9 TPOT -7.06%, with average TTFT +0.02%. Keep it as an explicit calibrated profile; require
   an independent seed and longer-output confirmation before any default change.
+- Experiment 038 performed that independent long-output confirmation. At output length 128, priority
+  added exactly five decode turns, changed C=32 throughput -0.32%, P90 TPOT +0.07%, P99.9 TPOT
+  -9.68%, and P90 TTFT +1.13%. Reject it as a deployment optimization; retain only the
+  default-disabled research flag.
 
 ## Next experiment
 
-Experiment 038: validate the opt-in one-turn decode-priority profile at an independent seed and
-longer output length. Do not reopen asynchronous communication work without a new measured residual
+Experiment 041: attribute the remaining padded-32 Graph replay with NVTX/kernel-level timing. Explicit
+20/28 Graph capture shapes in experiment 040 reduced padded-32 batches but did not move C=32 P90
+(-0.003%) or the roughly 34.1 ms padded-32 model time. Sampling and token-copy changes remain
+deprioritized; do not reopen asynchronous communication work without a new measured residual
 bottleneck.
 
 ## Success criteria

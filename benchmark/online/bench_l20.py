@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-tp", type=int, default=4)
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
+    parser.add_argument("--server-graph-bs", type=int, nargs="+", default=None)
     parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
     parser.add_argument("--server-max-prefill-streak", type=int, default=0)
     parser.add_argument("--server-decode-active-prefill-tokens", type=int, default=0)
@@ -191,6 +192,7 @@ between the first `{config['output_len']}` token events and excludes the final O
 - Tensor parallelism: `{config['server_tp']}`
 - Memory ratio: `{config['server_memory_ratio']}`
 - CUDA Graph max batch: `{config['server_graph_max_bs']}`
+- CUDA Graph explicit batches: `{config['server_graph_bs']}`
 - Maximum prefill tokens: `{config['server_max_extend_tokens']}`
 - Maximum prefill streak: `{config['server_max_prefill_streak']}`
 - Decode-active prefill tokens: `{config['server_decode_active_prefill_tokens']}`
@@ -320,6 +322,7 @@ async def main() -> None:
             "server_tp": args.server_tp,
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
+            "server_graph_bs": args.server_graph_bs,
             "server_max_extend_tokens": args.server_max_extend_tokens,
             "server_max_prefill_streak": args.server_max_prefill_streak,
             "server_decode_active_prefill_tokens": args.server_decode_active_prefill_tokens,

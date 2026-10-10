@@ -26,7 +26,7 @@
 | Decode response visibility | Complete, accepted | Fresh held-out matrix passes 288/288 requests; max TPOT 1.12s -> 0.79s with at most 0.125% per-rate throughput cost |
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 | Graph-tail prefill guard | Complete, rejected | Ordering changed as intended, but C=32 P90 TPOT regressed 28.69% |
-| Graph-tail non-blocking priority | Complete, opt-in | One extra decode turn; C=32 P90 TPOT -0.41%, P99.9 -7.06%, throughput -0.63% |
+| Graph-tail non-blocking priority | Complete, rejected | Long-output validation: C=32 P90 TPOT +0.07%, P99.9 -9.68%, throughput -0.32% |
 
 ## Decisions
 
@@ -144,7 +144,35 @@ without creating a decode-only loop. At C=32 it changed throughput -0.63%, P90 T
 TPOT -7.06%, and average TTFT +0.02%. Keep the option as an explicit calibrated profile, but do not
 enable it by default until a second seed and longer-output validation confirm the small tail gain.
 
+## Experiment 038 result
+
+Experiment 038 repeated the priority profile with independent seed `3800042` and output length 128.
+The treatment added exactly five decode batches (2,036 -> 2,041) and kept the same 610 padded-32
+batches. At C=32, throughput changed -0.32%, P90 TPOT changed +0.07%, P99.9 TPOT improved 9.68%,
+and P90 TTFT rose 1.13%. The P90 gate failed; reject the profile as a deployment optimization and
+keep it only as a default-disabled research flag.
+
 ## Next experiment
 
-Experiment 038: validate the accepted priority profile on an independent seed and longer output
-length. The adaptive-reserve profile remains frozen and generic cache heuristics remain disabled.
+Experiment 040 rejected explicit 20/28 Graph capture shapes. The treatment reduced padded-32 decode
+batches from 130 to 120 and added padded-20/28 batches, but C=32 P90 TPOT changed only -0.003% and
+padded-32 model time stayed about 34.1 ms. Experiment 041 should use kernel/NVTX attribution inside
+the padded-32 replay; do not continue shape-only tuning. The adaptive-reserve profile remains frozen
+and generic cache heuristics remain disabled.
+
+## Experiment 039 result
+
+Experiment 039 instrumented `Engine.forward_batch` and scheduler `copy_ready` events with opt-in CUDA
+events. On Qwen3-32B TP=4 L20, the control matrix was 38.040/166.885/267.630 tok/s at C=1/8/32;
+C=32 P90 TPOT was 211.305 ms. Across 596 timed batches, padded-32 Graph replay averaged 34.075 ms,
+versus 0.020 ms for sampling and 0.007 ms for the sampled-token copy. The remaining tail is therefore
+below the sampler and is most plausibly in Graph replay or batch-shape scheduling. No default behavior
+was changed.
+
+## Experiment 040 result
+
+Experiment 040 added opt-in explicit Graph shapes 20 and 28. The paired Qwen3-32B TP4 matrix changed
+C=32 throughput +0.06% and P90 TPOT -0.003%, while C=1/C=8 throughput changed -0.34%/-0.23%.
+Telemetry confirmed the shape distribution moved from 130 padded-32 decode batches to 120, but the
+remaining padded-32 model time was unchanged (34.073 -> 34.106 ms). Reject the shape list as a
+deployment optimization; retain the CLI for future profiling.

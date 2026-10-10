@@ -242,10 +242,18 @@ class Scheduler(SchedulerIOMixin):
         if last_data is None:
             return
 
-        batch, (_, next_tokens_cpu, copy_done) = last_data[0].batch, last_data[1]
+        batch, (_, next_tokens_cpu, copy_done, timing) = last_data[0].batch, last_data[1]
         self._record_pipeline_event("process_start", batch)
         copy_done.synchronize()
-        self._record_pipeline_event("copy_ready", batch)
+        timing_details: dict[str, object] = {}
+        if timing is not None:
+            timing_details = {
+                "gpu_execution_kind": timing.execution_kind,
+                "gpu_model_ms": timing.model_start.elapsed_time(timing.model_end),
+                "gpu_sample_ms": timing.model_end.elapsed_time(timing.sample_end),
+                "gpu_copy_ms": timing.sample_end.elapsed_time(timing.copy_end),
+            }
+        self._record_pipeline_event("copy_ready", batch, **timing_details)
         self._record_prefill_execution(batch)
         reply: List[DetokenizeMsg] = []
         new_finished_reqs: Set[Req] = set()
@@ -446,7 +454,11 @@ class Scheduler(SchedulerIOMixin):
             )
             timing_events[0].record(self.engine.stream)
         batch.input_ids = self.token_pool[input_mapping]
-        forward_output = self.engine.forward_batch(batch, sample_args)
+        forward_output = self.engine.forward_batch(
+            batch,
+            sample_args,
+            profile_timing=self.prefill_telemetry_enabled and self._is_primary_rank,
+        )
         self.token_pool[output_mapping] = forward_output.next_tokens_gpu
         if timing_events is not None:
             timing_events[1].record(self.engine.stream)
