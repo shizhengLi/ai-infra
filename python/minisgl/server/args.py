@@ -84,6 +84,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--quantization",
+        choices=["fp8"],
+        default=ServerArgs.quantization,
+        help=(
+            "Experimental linear-layer quantization. Embeddings, LM head, KV cache, and "
+            "collectives retain the model dtype."
+        ),
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,

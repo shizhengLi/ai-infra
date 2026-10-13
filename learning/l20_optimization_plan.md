@@ -240,7 +240,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 049 | Open-loop arrival matrix with the accepted TP4 profile | **Complete:** TTFT knee appears around 1.5 req/s for mixed long prompts | Report arrival-rate curves, not only fixed concurrency |
 | 050 | Held-out final evaluation | **Complete:** fresh-seed long-output unique/shared-prefix validation passes | Fresh seed, longer output, shared-prefix and unique-prefix cases |
 | 051 | L20 low-precision GEMM capability and shape sweep | **Complete:** FP8 dynamic W8A8 wins all 12 cold-cache points; INT4 is fastest but needs calibrated quality validation | All paths execute on SM89; kernel error is separated from quantization error; five timing samples |
-| 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | Demonstrates the system boundary between checkpoint format, TP sharding, scales, and kernels | BF16 remains unchanged; focused loader/dispatch tests pass |
+| 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | **Complete:** default-disabled FP8 loads BF16/pre-quantized weights and runs a real Qwen3-0.6B smoke test | BF16 remains unchanged; focused loader/dispatch tests pass |
 | 053 | FP8 W8A8 end-to-end integration | Uses L20 native FP8 and measures activation-quantization overhead | Accuracy gate plus memory/TTFT/TPOT/throughput matrix versus BF16 |
 | 054 | INT4 GPTQ-Marlin end-to-end integration | Tests whether weight compression can reduce TP degree and PCIe collective pressure | Accuracy gate and TP1/TP2 feasibility; no unsupported layer shapes |
 | 055 | Held-out quantization comparison | Converts kernel gains into a defensible deployment decision | Fresh prompts/tasks; at least three repeats; tokens/s/GPU and quality reported |
@@ -268,6 +268,16 @@ call, FP8 including dynamic activation quantization improved all 12 points by 1.
 improved them by 1.09-1.68x, while INT4 W4A16 kernel speedup was 2.16-3.99x. Select FP8 for the first
 end-to-end implementation. INT4 remains a later candidate because naive channelwise RTN produced
 14.49-15.78% synthetic output relative-L2 error and requires calibrated GPTQ/AWQ quality evidence.
+
+## Experiment 052 result
+
+Experiment 052 implemented the default-disabled `--quantization fp8` boundary. Dense transformer
+linears now support BF16-to-FP8 conversion at load time and pre-quantized FP8 weight/scale state;
+column-parallel scales shard and merge with outputs, while row-parallel scales replicate. Embedding,
+LM head, KV cache, and collectives stay BF16. Ten focused tests and 78 selected regressions passed.
+A Qwen3-32B TP4 meta build produced the expected 256 FP8 weight/scale pairs, and paired Qwen3-0.6B
+BF16/FP8 smoke runs both generated `[3, 4, 3, 4]`. Accept the scaffold but keep it off by default;
+experiment 053 must establish end-to-end quality, memory, Graph compatibility, and serving speed.
 
 ## Success criteria
 

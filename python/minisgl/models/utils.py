@@ -28,6 +28,7 @@ class GatedMLP(BaseOP):
             config.hidden_size,
             [config.intermediate_size, config.intermediate_size],
             has_bias=False,
+            quantization_config=config.quantization_config,
         )
 
         FN_MAP = {"silu": silu_and_mul, "gelu": gelu_and_mul}
@@ -39,6 +40,7 @@ class GatedMLP(BaseOP):
             config.intermediate_size,
             config.hidden_size,
             has_bias=False,
+            quantization_config=config.quantization_config,
         )
 
     @nvtx_annotate("MLP")
@@ -63,6 +65,7 @@ class MoEMLP(BaseOP):
             config.hidden_size,
             config.num_experts,
             has_bias=False,
+            quantization_config=config.quantization_config,
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -92,6 +95,7 @@ class RopeAttn(BaseOP):
             num_qo_heads=config.num_qo_heads,
             num_kv_heads=config.num_kv_heads,
             has_bias=has_attn_bias,
+            quantization_config=config.quantization_config,
         )
         self.has_qk_norm = has_qk_norm
         if has_qk_norm:
@@ -113,6 +117,7 @@ class RopeAttn(BaseOP):
             head_dim * config.num_qo_heads,
             config.hidden_size,
             has_bias=False,
+            quantization_config=config.quantization_config,
         )
 
     @nvtx_annotate("MHA")

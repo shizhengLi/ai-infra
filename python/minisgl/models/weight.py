@@ -33,6 +33,18 @@ _EXPERT_PATTERN = re.compile(r"^(?P<prefix>.+\.experts)\.(?P<idx>\d+)\.(?P<name>
 
 def _shard_tensor(key: str, value: torch.Tensor, r: int, n: int, num_kv_heads: int):
     """Extract rank r's shard from a single tensor. Returns a contiguous copy."""
+    if key.endswith(".weight_scale"):
+        if any(key.count(sub) for sub in _SPLIT_DIM_0):
+            is_kv_proj = any(key.count(sub) for sub in (".k_proj", ".v_proj"))
+            if is_kv_proj and num_kv_heads is not None and num_kv_heads < n:
+                channels_per_head = value.shape[0] // num_kv_heads
+                head_idx = r * num_kv_heads // n
+                start = head_idx * channels_per_head
+                return value[start : start + channels_per_head].clone()
+            return value.chunk(n, dim=0)[r].clone()
+        if any(key.count(sub) for sub in _SPLIT_DIM_1):
+            return value.clone()
+        return value
     if any(key.count(sub) for sub in _SPLIT_DIM_0):
         is_kv_proj = any(key.count(sub) for sub in (".k_proj", ".v_proj"))
         if is_kv_proj and num_kv_heads is not None and num_kv_heads < n:

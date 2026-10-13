@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Any, Dict
 from transformers import PretrainedConfig
 
+from minisgl.quantization import QuantizationConfig
+
 
 @dataclass(frozen=True)
 class RotaryConfig:
@@ -32,6 +34,7 @@ class ModelConfig:
     norm_topk_prob: bool
     model_type: str
     architectures: list[str]
+    quantization_config: QuantizationConfig | None = None
 
     @property
     def is_moe(self) -> bool:

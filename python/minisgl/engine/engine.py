@@ -156,12 +156,21 @@ class Engine:
 
     def _load_weight_state_dict(self, config: EngineConfig) -> Dict[str, torch.Tensor]:
         if config.use_dummy_weight:
-            return {
-                k: torch.randn_like(v, device=self.device)
-                for k, v in self.model.state_dict().items()
-            }
+            result = {}
+            for key, value in self.model.state_dict().items():
+                if key.endswith(".weight_scale"):
+                    continue
+                dtype = self.dtype if value.dtype == torch.float8_e4m3fn else value.dtype
+                result[key] = torch.randn(value.shape, dtype=dtype, device=self.device)
+            return result
         else:
-            return {k: v.to(self.dtype) for k, v in load_weight(config.model_path, self.device)}
+            result = {}
+            for key, value in load_weight(config.model_path, self.device):
+                is_fp8_metadata = config.quantization_config is not None and (
+                    value.dtype == torch.float8_e4m3fn or key.endswith(".weight_scale")
+                )
+                result[key] = value if is_fp8_metadata else value.to(self.dtype)
+            return result
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
         new_free_memory = self._sync_get_memory()[1]
@@ -267,6 +276,12 @@ def _adjust_config(config: EngineConfig):
     if "trtllm" in config.attention_backend and config.page_size not in [16, 32, 64]:
         override("page_size", 64)
         logger.warning_rank0("Page size is overridden to 64 for TRTLLM backend")
+
+    if config.quantization_config is not None:
+        if config.dtype not in (torch.float16, torch.bfloat16):
+            raise ValueError("FP8 quantization requires float16 or bfloat16 model dtype")
+        if config.model_config.is_moe:
+            raise ValueError("FP8 quantization currently supports dense models only")
 
     if config.model_config.is_moe and config.moe_backend == "auto":
         override("moe_backend", "fused")

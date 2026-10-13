@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import TYPE_CHECKING, List
 
 import torch
 from minisgl.distributed import DistributedInfo
+from minisgl.quantization import QuantizationConfig
 from minisgl.utils import cached_load_hf_config
 
 if TYPE_CHECKING:
@@ -29,6 +30,7 @@ class EngineConfig:
     use_dummy_weight: bool = False
     use_pynccl: bool = True
     allow_bf16_reduced_precision_reduction: bool = True
+    quantization: str | None = None
     max_seq_len_override: int | None = None
     num_page_override: int | None = None  # if not None, will override the number of pages
 
@@ -40,7 +42,12 @@ class EngineConfig:
     def model_config(self) -> ModelConfig:
         from minisgl.models import ModelConfig
 
-        return ModelConfig.from_hf(self.hf_config)
+        config = ModelConfig.from_hf(self.hf_config)
+        return replace(config, quantization_config=self.quantization_config)
+
+    @cached_property
+    def quantization_config(self) -> QuantizationConfig | None:
+        return QuantizationConfig.from_name(self.quantization)
 
     @property
     def max_seq_len(self) -> int:

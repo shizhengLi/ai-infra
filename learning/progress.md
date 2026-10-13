@@ -294,3 +294,15 @@ INT4 quarters it. Select FP8 for experiment 052 because it produced a broad meas
 requiring a calibrated GPTQ/AWQ checkpoint. Do not claim INT4 model quality from this screen: naive
 channelwise RTN had 14.49-15.78% synthetic output relative-L2 error. Generic defaults remain
 unchanged.
+
+## Experiment 052 result
+
+Experiment 052 added default-disabled FP8 configuration, per-output weight scales, dynamic per-token
+activation quantization, a shared linear dispatch, and TP-aware scale loading. It supports converting
+BF16 checkpoint shards during load or directly consuming FP8 `weight` plus `weight_scale`; row/O
+projection wrappers retain their all-reduce after the FP8 GEMM. Embedding, LM head, KV cache, and
+collectives remain BF16, and MoE is explicitly unsupported. The focused suite passed 10/10 and the
+core/misc/benchmark selection passed 78/78. A Qwen3-32B TP4 meta build had the expected 256 FP8
+weight/scale pairs. Real Qwen3-0.6B BF16 and FP8 smoke runs both returned `[3, 4, 3, 4]` for the fixed
+request. Keep FP8 disabled by default and proceed to experiment 053 for paired quality, memory,
+CUDA-Graph, TTFT, TPOT, and throughput evaluation.
