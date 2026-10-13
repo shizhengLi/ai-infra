@@ -56,6 +56,15 @@ multi-GPU throughput.
 - Report scaling efficiency and NCCL/PyNCCL time on the PCIe topology.
 - Optimize communication only after an Nsight Systems trace attributes the bottleneck.
 
+### Phase 5: low-precision inference
+
+- Screen FP8 W8A8, INT8 W8A8, and INT4 weight-only kernels on Qwen3-32B TP4 layer shapes.
+- Separate quantization error from kernel correctness error and activation-quantization overhead.
+- Add quantized weight metadata, scale loading, TP sharding, and `QuantLinear` dispatch only after
+  the kernel screen identifies a viable path.
+- Validate end-to-end accuracy, memory, TTFT, TPOT, throughput, and GPUs per replica before making a
+  deployment claim. Weight-only quantization does not directly reduce BF16 collective message size.
+
 ## Current execution point
 
 Experiments 000-015 completed environment validation, baseline measurement, focused optimization,
@@ -192,10 +201,73 @@ Experiment 046 added opt-in `MiniSGL.SchedulerForward.decode.bs=*` NVTX ranges a
 No new shape-specific synchronization kernel was found. Do not add another scheduler barrier or
 priority policy.
 
-## Next experiment
+## Experiment 047 result
 
-Experiment 047: target the measured NCCL/BF16 GEMM implementation with one isolated kernel/collective
-change, preserving symmetric Graph defaults and the strict C=32 P90 gate.
+Experiment 047 measured Qwen3-32B BF16 TP2/TP4/TP8 on L20 with CUDA Graphs disabled
+and direct PyNCCL enabled. TP4 reached 1.41-1.54x TP2 throughput with 70.7-76.8%
+parallel efficiency across C=1/8/32. TP8 reached 1.66-1.72x with only 41.5-43.0%
+efficiency, confirming diminishing returns from per-step TP communication. TP4 is
+the best measured efficiency point; TP8 remains a throughput option but is not a
+cost-neutral scale-out. TP2 had to use memory ratio 0.9 after a 0.7 KV-cache
+allocation failure, while TP4/TP8 used 0.7, so this is a directional scaling
+result rather than a perfectly memory-matched sweep. The online run did not have
+kernel-level NCCL attribution; retain experiment 046's 51.5% Nsight context and
+collect a fresh profile in the communication sweep.
+
+## Interview-oriented roadmap
+
+The recommendations in `learning/grok.md` are useful, but the measured results now narrow the
+credible interview story. Do not present a parameter sweep or an unvalidated kernel guess as an
+optimization. Present the work as a bottleneck-driven loop:
+
+1. Establish a reproducible Qwen3-32B BF16 TP4 L20 baseline with throughput, TTFT, TPOT, P90/P99.9,
+   GPU timing, and Nsight evidence.
+2. Show the accepted explicit graph-disabled direct-PyNCCL profile: it improved graph-disabled TP4
+   throughput by about 9--12% in experiments 032--034, while Graph mode was rejected on the strict
+   C=32 tail gate.
+3. Show the rejected alternatives and why they were rejected: Graph shape changes, result barriers,
+   decode priority, BF16 reduction mode, and eager fallback all failed the tail/throughput gates.
+4. Complete one held-out multi-card scaling study and one communication tuning study before making
+   a deployment recommendation. Experiments 047 and 048 now satisfy these two study slots; 049-050
+   are the serving-load and held-out confirmation phases.
+
+### Planned experiments
+
+| Experiment | Scope | Why it is interview-useful | Acceptance gate |
+| --- | --- | --- | --- |
+| 047 | TP2/TP4/TP8 scaling on Qwen3-32B, graph-disabled direct PyNCCL profile | **Complete:** quantifies TP scaling efficiency and exposes the TP8 communication wall | Three repeats; throughput and scaling reported; NCCL share remains a follow-up profile |
+| 048 | PyNCCL buffer/algorithm sweep in graph-disabled mode | **Complete:** direct buffer=0 remains best; protocol candidates fail online gate | One variable at a time; no C=32 P90 or correctness regression |
+| 049 | Open-loop arrival matrix with the accepted TP4 profile | **Complete:** TTFT knee appears around 1.5 req/s for mixed long prompts | Report arrival-rate curves, not only fixed concurrency |
+| 050 | Held-out final evaluation | **Complete:** fresh-seed long-output unique/shared-prefix validation passes | Fresh seed, longer output, shared-prefix and unique-prefix cases |
+| 051 | L20 low-precision GEMM capability and shape sweep | **Complete:** FP8 dynamic W8A8 wins all 12 cold-cache points; INT4 is fastest but needs calibrated quality validation | All paths execute on SM89; kernel error is separated from quantization error; five timing samples |
+| 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | Demonstrates the system boundary between checkpoint format, TP sharding, scales, and kernels | BF16 remains unchanged; focused loader/dispatch tests pass |
+| 053 | FP8 W8A8 end-to-end integration | Uses L20 native FP8 and measures activation-quantization overhead | Accuracy gate plus memory/TTFT/TPOT/throughput matrix versus BF16 |
+| 054 | INT4 GPTQ-Marlin end-to-end integration | Tests whether weight compression can reduce TP degree and PCIe collective pressure | Accuracy gate and TP1/TP2 feasibility; no unsupported layer shapes |
+| 055 | Held-out quantization comparison | Converts kernel gains into a defensible deployment decision | Fresh prompts/tasks; at least three repeats; tokens/s/GPU and quality reported |
+
+Experiment 047 is complete. Use Qwen3-32B for TP2/4/8 because TP1 does not fit the model on a 48 GiB
+L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
+best communication setting, while LL128's microbenchmark gains did not survive the online C=8/C=32
+gate. Experiment 049 found 100% TPOT-SLO attainment but only 59.7%/44.4% TTFT-SLO attainment at
+1.5/2.5 requests/s. Experiment 050 is complete: fresh-seed 128-token unique/shared-prefix runs
+passed with stable decode timing. The selected profile is now validated for the scoped L20/Qwen3-32B
+configuration. If a TP1 reference is needed for a scaling plot, use a separately labeled Qwen3-14B
+run rather than mixing models.
+
+Do not start a GEMM kernel rewrite yet. Nsight shows GEMM is material, but the current environment
+lacks `ncu` and the available CUTLASS/FA dependency versions have already caused compatibility
+blockers. First finish scaling and communication tuning; only then choose a kernel change with a
+measurable baseline and a correctness test.
+
+## Experiment 051 result
+
+Experiment 051 established the new low-precision baseline on Qwen3-32B TP4 local layer shapes. All
+FP8, INT8, and GPTQ-Marlin INT4 paths executed on L20 SM89, with maximum kernel relative-L2 error
+0.501% and maximum timing coefficient of variation 0.46%. With a 128 MiB L2 flush outside each timed
+call, FP8 including dynamic activation quantization improved all 12 points by 1.47-2.07x. INT8
+improved them by 1.09-1.68x, while INT4 W4A16 kernel speedup was 2.16-3.99x. Select FP8 for the first
+end-to-end implementation. INT4 remains a later candidate because naive channelwise RTN produced
+14.49-15.78% synthetic output relative-L2 error and requires calibrated GPTQ/AWQ quality evidence.
 
 ## Success criteria
 

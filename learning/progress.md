@@ -12,7 +12,7 @@
 | KV/radix experiments | Concurrent adaptive reserve accepted | Batched calls 41.67 -> 8.33; reclamation -1.73%; throughput -0.036%; paired matches preserved |
 | Online serving | Complete | TP=4 peaks at 503.35 token/s; latency knee between C=8 and C=32 |
 | Prefill budget | Complete | 32768 cuts P99.9 TPOT 46.82% but regresses average TTFT 23.99% |
-| TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 is 22% faster at 57% more total power |
+| TP 2/4/8 | Complete | TP=4 is efficiency optimum; TP=8 reaches 1.66-1.72x TP2 throughput at 41.5-43.0% efficiency |
 | Scheduling fairness | Complete | Prefill streak 1 cuts worst decode stall 62% at 0.13% throughput cost |
 | Adaptive prefill | Complete | Active budget 4096 halves worst TPOT with no measured throughput loss |
 | Poisson budget sweep | Complete | 2048 reaches 100% TPOT SLO at 2.5 req/s with 0.12% throughput cost |
@@ -223,3 +223,74 @@ Padded-24/32 SchedulerForward ranges were about 59.6/59.4 ms, with nested GraphR
 56.4/56.2 ms. Kernel composition stayed NCCL 51.5% plus three BF16 GEMM classes about 46.7%; no
 new shape-specific synchronization kernel appeared. Do not add another scheduler barrier. The next
 experiment should isolate one NCCL or BF16 GEMM implementation change under the strict C=32 gate.
+
+## Interview-oriented next steps
+
+After reviewing `learning/grok.md`, the roadmap is narrowed to a defensible interview narrative:
+baseline and Nsight attribution, accepted direct PyNCCL in graph-disabled mode, explicit rejection
+of Graph-tail heuristics, then held-out multi-card scaling and communication tuning. Experiment 047
+has now completed the TP2/TP4/TP8 Qwen3-32B scaling matrix with three repeats and scaling-efficiency
+reporting. Experiment 049 has completed the open-loop arrival study; experiment 050 is the fresh
+held-out final evaluation. Experiment 048 completed the PyNCCL buffer/protocol sweep. Defer a GEMM rewrite until `ncu`/CUTLASS tooling and a concrete kernel
+candidate are available.
+
+## Experiment 047 result
+
+Experiment 047 completed the held-out TP scaling matrix for Qwen3-32B BF16 on L20. With CUDA Graphs
+disabled and direct PyNCCL enabled, TP4 delivered 1.41-1.54x TP2 throughput at 70.7-76.8% efficiency
+for C=1/8/32. TP8 delivered 1.66-1.72x at only 41.5-43.0% efficiency. The result makes TP4 the
+best measured efficiency point and shows that TP8's extra aggregate throughput is increasingly paid
+for by communication. TP2 used memory ratio 0.9 after a 0.7 KV-cache allocation failure; TP4 and TP8
+used 0.7, so the result is directional and this limitation is recorded in
+`experiments/047_tp_scaling.md`. The benchmark and telemetry artifacts are under `learning/results/`.
+
+The online benchmark did not include kernel-level NCCL attribution. Experiment 046's Nsight result
+(about 51.5% NCCL kernel time in the measured padded Graph replay) remains context, not a measurement
+from this run. Experiment 048 then ran the one-variable direct-PyNCCL buffer/algorithm sweep with the
+strict C=32 P90 TPOT and correctness gates; its result is recorded below.
+
+## Experiment 048 result
+
+Experiment 048 swept PyNCCL buffer thresholds and NCCL protocol/algorithm choices. The direct path
+(`MINISGL_PYNCCL_MAX_BUFFER_SIZE=0`) had the best broad microbenchmark behavior; non-zero internal
+buffers add device-to-device copies and were slower for most decode-sized messages. `NCCL_ALGO=Tree`
+and `NCCL_PROTO=Simple` were also poor microbenchmark choices. `NCCL_PROTO=LL128` improved the
+80-320 KiB microbenchmark points, but the online Qwen3-32B TP4 matrix changed throughput
+`+0.76%/-3.56%/-0.87%` and P90 TPOT `-0.80%/+1.50%/+2.18%` at C=1/8/32; it failed the C=8/C=32
+gate and increased C=32 P99.9 TPOT by 2.49%. Keep direct buffer=0 as the explicit graph-disabled
+profile and leave generic NCCL defaults unchanged. Experiment 049 then ran open-loop arrival rates
+with the accepted TP4 profile; its result is recorded below.
+
+## Experiment 049 result
+
+Experiment 049 used seeded Poisson/open-loop arrivals with a balanced 256/1024/4096-token prompt
+mix and 128 generated tokens. The accepted TP4 Direct PyNCCL graph-disabled profile kept TPOT-SLO
+attainment at 100% for 0.5/0.9/1.5/2.5 requests/s, but TTFT-SLO attainment fell from 94.4% and
+91.7% at 0.5/0.9 req/s to 59.7% and 44.4% at 1.5/2.5 req/s. The rate increase exposes a prefill
+queueing knee rather than a decode token-progress failure. Keep the profile unchanged and use
+roughly 0.9 requests/s as the measured operating point when a 2-second TTFT SLO is required. The
+next experiment is 050, a fresh-seed held-out confirmation with longer output and both unique and
+shared-prefix requests.
+
+## Experiment 050 result
+
+Experiment 050 completed the fresh-seed final validation with 128-token outputs. Unique-prefix runs
+achieved 35.87 tok/s, 288.18 ms average TTFT, and 25.83 ms average TPOT. Shared-system-prefix runs
+achieved 37.23 tok/s, 120.56 ms average TTFT, and 26.12 ms average TPOT. The first shared request
+had 407 ms TTFT; the following eleven were 94-97 ms, confirming Radix Cache reuse. All 24 requests
+returned the full output with no server or integrity errors. Accept the explicit TP4 L20 profile for
+the scoped Qwen3-32B workload: Direct PyNCCL, CUDA Graph disabled, prefill streak 1, active prefill
+budget 1024, and maximum prefill 2048. Keep generic defaults unchanged and close the planned
+optimization loop; a future experiment needs a new bottleneck hypothesis.
+
+## Experiment 051 result
+
+Experiment 051 opened the low-precision phase with a cold-cache GEMM screen over all four
+Qwen3-32B TP4 local projection shapes at M=1/8/32. FP8 W8A8, INT8 W8A8, and GPTQ-Marlin INT4 all
+executed on L20 SM89; maximum kernel relative-L2 error was 0.501% and maximum timing coefficient of
+variation was 0.46%. FP8 including dynamic activation quantization improved all 12 points by
+1.47-2.07x, INT8 by 1.09-1.68x, and INT4 W4A16 by 2.16-3.99x. FP8/INT8 halve linear weight storage;
+INT4 quarters it. Select FP8 for experiment 052 because it produced a broad measured gain without
+requiring a calibrated GPTQ/AWQ checkpoint. Do not claim INT4 model quality from this screen: naive
+channelwise RTN had 14.49-15.78% synthetic output relative-L2 error. Generic defaults remain
+unchanged.
