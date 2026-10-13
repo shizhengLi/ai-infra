@@ -29,11 +29,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--attention-backend", "--attn", default="fi")
+    parser.add_argument("--quantization", choices=["fp8"], default=None)
     parser.add_argument("--cuda-graph-max-bs", type=int, default=None)
     parser.add_argument("--max-running-requests", type=int, default=128)
     parser.add_argument("--max-seq-len", type=int, default=2048)
     parser.add_argument("--max-prefill-length", type=int, default=8192)
     parser.add_argument("--memory-ratio", type=float, default=0.8)
+    parser.add_argument(
+        "--num-pages",
+        type=int,
+        default=None,
+        help="Fix KV capacity so model and CUDA Graph memory can be compared across modes.",
+    )
     parser.add_argument("--page-size", type=int, default=1)
     parser.add_argument("--cache-type", choices=["radix", "naive"], default="radix")
     parser.add_argument("--markdown-out", type=Path)
@@ -114,6 +121,7 @@ Graph capture and kernel JIT affect startup but not steady-state throughput.
 
 - Model: `{config['model']}`
 - Attention backend: `{config['attention_backend']}`
+- Quantization: `{config['quantization'] or 'none'}`
 - Requests: `{config['num_prompts']}`
 - Input/output tokens per request: `{config['input_len']}/{config['output_len']}`
 - Repeats: `{config['repeats']}`
@@ -121,11 +129,15 @@ Graph capture and kernel JIT affect startup but not steady-state throughput.
 - CUDA Graph max batch size: `{graph_max if graph_max is not None else 'auto'}`
 - Resolved CUDA Graph sizes: `{config['resolved_cuda_graph_bs']}`
 - Memory ratio: `{config['memory_ratio']}`
+- Fixed KV pages: `{config['num_pages'] if config['num_pages'] is not None else 'auto'}`
 - Page size/cache: `{config['page_size']}` / `{config['cache_type']}`
 
 ## Results
 
 - Engine initialization: **{measurements['initialization_s']:.4f} s**
+- CUDA allocated after initialization: **{measurements['cuda_allocated_after_init_mib']:.2f} MiB**
+- CUDA reserved after initialization: **{measurements['cuda_reserved_after_init_mib']:.2f} MiB**
+- Peak CUDA allocated: **{measurements['cuda_peak_allocated_mib']:.2f} MiB**
 - Mean throughput: **{measurements['throughput_mean_tok_s']:.2f} token/s**
 - Median throughput: **{measurements['throughput_median_tok_s']:.2f} token/s**
 - Population standard deviation: **{measurements['throughput_pstdev_tok_s']:.2f} token/s**
@@ -156,11 +168,13 @@ def main() -> None:
         "repeats": args.repeats,
         "seed": args.seed,
         "attention_backend": args.attention_backend,
+        "quantization": args.quantization,
         "cuda_graph_max_bs": args.cuda_graph_max_bs,
         "max_running_requests": args.max_running_requests,
         "max_seq_len": args.max_seq_len,
         "max_prefill_length": args.max_prefill_length,
         "memory_ratio": args.memory_ratio,
+        "num_pages": args.num_pages,
         "page_size": args.page_size,
         "cache_type": args.cache_type,
     }
@@ -169,11 +183,13 @@ def main() -> None:
     llm = LLM(
         args.model,
         attention_backend=args.attention_backend,
+        quantization=args.quantization,
         cuda_graph_max_bs=args.cuda_graph_max_bs,
         max_running_req=args.max_running_requests,
         max_seq_len_override=args.max_seq_len,
         max_extend_tokens=args.max_prefill_length,
         memory_ratio=args.memory_ratio,
+        num_page_override=args.num_pages,
         page_size=args.page_size,
         cache_type=args.cache_type,
     )
@@ -181,6 +197,8 @@ def main() -> None:
     device = torch.cuda.current_device()
     properties = torch.cuda.get_device_properties(device)
     config["resolved_cuda_graph_bs"] = llm.engine.graph_runner.graph_bs_list
+    cuda_allocated_after_init_mib = torch.cuda.memory_allocated(device) / (1024**2)
+    cuda_reserved_after_init_mib = torch.cuda.memory_reserved(device) / (1024**2)
     git_dirty, git_diff_sha256 = git_worktree_state()
 
     # Warm up sampling and the short-prefill path without sharing a prefix with measured inputs.
@@ -205,6 +223,7 @@ def main() -> None:
                 "duration_s": duration_s,
                 "output_tokens": actual_tokens,
                 "throughput_tok_s": throughput,
+                "output_token_ids": [output["token_ids"] for output in outputs],
             }
         )
         print(
@@ -230,6 +249,9 @@ def main() -> None:
         "config": config,
         "measurements": {
             "initialization_s": initialization_s,
+            "cuda_allocated_after_init_mib": cuda_allocated_after_init_mib,
+            "cuda_reserved_after_init_mib": cuda_reserved_after_init_mib,
+            "cuda_peak_allocated_mib": torch.cuda.max_memory_allocated(device) / (1024**2),
             "runs": runs,
             "throughput_mean_tok_s": statistics.mean(throughputs),
             "throughput_median_tok_s": statistics.median(throughputs),

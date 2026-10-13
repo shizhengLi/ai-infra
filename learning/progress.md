@@ -306,3 +306,14 @@ core/misc/benchmark selection passed 78/78. A Qwen3-32B TP4 meta build had the e
 weight/scale pairs. Real Qwen3-0.6B BF16 and FP8 smoke runs both returned `[3, 4, 3, 4]` for the fixed
 request. Keep FP8 disabled by default and proceed to experiment 053 for paired quality, memory,
 CUDA-Graph, TTFT, TPOT, and throughput evaluation.
+
+## Experiment 053 result
+
+Experiment 053 completed the paired FP8 end-to-end gate. The final Qwen3-32B TP4 Graph matrix
+improved throughput by 55.00%/49.48%/47.34% at C=1/8/32 and average TPOT by
+37.05%/35.65%/34.69%. Sampled peak memory fell from 18,229 to 15,407 MiB/card. The final
+570-question MMLU comparison scored 80.35% BF16 versus 79.65% FP8 with 100% parse rates, a
+0.70-point drop inside the one-point gate. Stage A showed that FP8 eager regresses small-model
+throughput by 19-22%, whereas CUDA Graph converts it into a 10-21% gain; the accepted result is
+therefore Graph-scoped. FP8 remains default-disabled pending experiment 055's fresh-seed mixed-length
+and open-loop validation. Experiment 054 is next and will address calibrated INT4 integration.

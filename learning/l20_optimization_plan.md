@@ -241,7 +241,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 050 | Held-out final evaluation | **Complete:** fresh-seed long-output unique/shared-prefix validation passes | Fresh seed, longer output, shared-prefix and unique-prefix cases |
 | 051 | L20 low-precision GEMM capability and shape sweep | **Complete:** FP8 dynamic W8A8 wins all 12 cold-cache points; INT4 is fastest but needs calibrated quality validation | All paths execute on SM89; kernel error is separated from quantization error; five timing samples |
 | 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | **Complete:** default-disabled FP8 loads BF16/pre-quantized weights and runs a real Qwen3-0.6B smoke test | BF16 remains unchanged; focused loader/dispatch tests pass |
-| 053 | FP8 W8A8 end-to-end integration | Uses L20 native FP8 and measures activation-quantization overhead | Accuracy gate plus memory/TTFT/TPOT/throughput matrix versus BF16 |
+| 053 | FP8 W8A8 end-to-end integration | **Complete:** Qwen3-32B TP4 gains 47-55% throughput with a 0.70-point MMLU drop | Quality, Graph, memory, TTFT, TPOT, throughput, and repeatability gates pass |
 | 054 | INT4 GPTQ-Marlin end-to-end integration | Tests whether weight compression can reduce TP degree and PCIe collective pressure | Accuracy gate and TP1/TP2 feasibility; no unsupported layer shapes |
 | 055 | Held-out quantization comparison | Converts kernel gains into a defensible deployment decision | Fresh prompts/tasks; at least three repeats; tokens/s/GPU and quality reported |
 
@@ -278,6 +278,16 @@ LM head, KV cache, and collectives stay BF16. Ten focused tests and 78 selected 
 A Qwen3-32B TP4 meta build produced the expected 256 FP8 weight/scale pairs, and paired Qwen3-0.6B
 BF16/FP8 smoke runs both generated `[3, 4, 3, 4]`. Accept the scaffold but keep it off by default;
 experiment 053 must establish end-to-end quality, memory, Graph compatibility, and serving speed.
+
+## Experiment 053 result
+
+Experiment 053 validated FP8 W8A8 end to end on L20. Qwen3-32B TP4 Graph throughput improved
+55.00%/49.48%/47.34% at C=1/8/32, average TPOT fell 37.05%/35.65%/34.69%, and sampled peak memory
+fell 2,822 MiB/card (15.48%). On 570 seeded MMLU questions, BF16 scored 80.35% and FP8 scored
+79.65%, a 0.70-point drop that passes the one-point gate; both parse rates were 100%. Small-model
+eager FP8 regressed throughput by 19-22%, while Graph FP8 improved it by 10-21%, so the accepted
+claim is explicitly Graph-scoped. Keep FP8 default-disabled until experiment 055 confirms mixed
+long prompts and open-loop tails with a fresh seed. Experiment 054 is the next planned INT4 phase.
 
 ## Success criteria
 
