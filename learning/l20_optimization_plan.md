@@ -242,11 +242,11 @@ optimization. Present the work as a bottleneck-driven loop:
 | 051 | L20 low-precision GEMM capability and shape sweep | **Complete:** FP8 dynamic W8A8 wins all 12 cold-cache points; INT4 is fastest but needs calibrated quality validation | All paths execute on SM89; kernel error is separated from quantization error; five timing samples |
 | 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | **Complete:** default-disabled FP8 loads BF16/pre-quantized weights and runs a real Qwen3-0.6B smoke test | BF16 remains unchanged; focused loader/dispatch tests pass |
 | 053 | FP8 W8A8 end-to-end integration | **Complete:** Qwen3-32B TP4 gains 47-55% throughput with a 0.70-point MMLU drop | Quality, Graph, memory, TTFT, TPOT, throughput, and repeatability gates pass |
-| 054 | INT4 GPTQ-Marlin end-to-end integration | Tests whether weight compression can reduce TP degree and PCIe collective pressure | Accuracy gate and TP1/TP2 feasibility; no unsupported layer shapes |
+| 054 | INT4 AWQ-Marlin end-to-end integration | **Complete:** Qwen3-32B fits TP1/TP2 and saves cards, but misses the one-point MMLU gate | TP1/TP2 and Graph pass; default-FP16/BF16 quality drops 1.23/1.75 points |
 | 055 | Held-out quantization comparison | Converts kernel gains into a defensible deployment decision | Fresh prompts/tasks; at least three repeats; tokens/s/GPU and quality reported |
 
-Experiment 047 is complete. Use Qwen3-32B for TP2/4/8 because TP1 does not fit the model on a 48 GiB
-L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
+Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
+TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
 best communication setting, while LL128's microbenchmark gains did not survive the online C=8/C=32
 gate. Experiment 049 found 100% TPOT-SLO attainment but only 59.7%/44.4% TTFT-SLO attainment at
 1.5/2.5 requests/s. Experiment 050 is complete: fresh-seed 128-token unique/shared-prefix runs
@@ -287,7 +287,22 @@ fell 2,822 MiB/card (15.48%). On 570 seeded MMLU questions, BF16 scored 80.35% a
 79.65%, a 0.70-point drop that passes the one-point gate; both parse rates were 100%. Small-model
 eager FP8 regressed throughput by 19-22%, while Graph FP8 improved it by 10-21%, so the accepted
 claim is explicitly Graph-scoped. Keep FP8 default-disabled until experiment 055 confirms mixed
-long prompts and open-loop tails with a fresh seed. Experiment 054 is the next planned INT4 phase.
+long prompts and open-loop tails with a fresh seed. Experiment 054 subsequently tested INT4.
+
+## Experiment 054 result
+
+Experiment 054 implemented calibrated INT4 AWQ loading through the shared Marlin W4A16 kernel. The
+official Qwen3-32B-AWQ checkpoint now loads all dense projections, captures Graph shapes through
+batch 32, and runs on one or two L20s. Controlled BF16 TP1 reached 34.69/169.66/197.74 tok/s at
+C=1/8/32; TP2 reached 60.64/278.69/316.09 tok/s, a 1.60-1.75x speedup with 79.9-87.4% scaling
+efficiency. TP1 used 21.0-21.8 GiB total and TP2 used 22.6-23.2 GiB total, versus 61.6 GiB sampled
+across the FP8 TP4 baseline. This is a strong capacity and tokens/s/GPU result, not a peak-throughput
+win over FP8 TP4.
+
+The strict quality gate failed. On the same 570 MMLU questions, BF16/FP8 scored 80.35%/79.65%,
+checkpoint-default FP16 AWQ scored 79.12% (-1.23 points), and dtype-controlled BF16 AWQ scored
+78.60% (-1.75 points). Accept the implementation and TP feasibility evidence, keep AWQ
+default-disabled, and carry it into experiment 055 only as a conditional low-memory profile.
 
 ## Success criteria
 

@@ -47,7 +47,12 @@ class EngineConfig:
 
     @cached_property
     def quantization_config(self) -> QuantizationConfig | None:
-        return QuantizationConfig.from_name(self.quantization)
+        checkpoint_config = (
+            getattr(self.hf_config, "quantization_config", None)
+            if self.quantization == "awq"
+            else None
+        )
+        return QuantizationConfig.from_name(self.quantization, checkpoint_config)
 
     @property
     def max_seq_len(self) -> int:

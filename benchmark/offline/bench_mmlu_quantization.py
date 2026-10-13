@@ -25,7 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Paired-friendly MMLU generation gate")
     parser.add_argument("--model", required=True)
     parser.add_argument("--data-tar", type=Path, required=True)
-    parser.add_argument("--quantization", choices=["fp8"], default=None)
+    parser.add_argument("--quantization", choices=["fp8", "awq"], default=None)
     parser.add_argument("--questions-per-subject", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--seed", type=int, default=5300042)

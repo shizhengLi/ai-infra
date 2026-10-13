@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gpu-indices", default="0,1,2,3")
     parser.add_argument("--monitor-interval", type=float, default=0.5)
     parser.add_argument("--server-tp", type=int, default=4)
+    parser.add_argument("--server-quantization", choices=["fp8", "awq"], default=None)
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
     parser.add_argument("--server-graph-bs", type=int, nargs="+", default=None)
@@ -190,6 +191,7 @@ between the first `{config['output_len']}` token events and excludes the final O
 ## Server configuration
 
 - Tensor parallelism: `{config['server_tp']}`
+- Quantization: `{config['server_quantization'] or 'none'}`
 - Memory ratio: `{config['server_memory_ratio']}`
 - CUDA Graph max batch: `{config['server_graph_max_bs']}`
 - CUDA Graph explicit batches: `{config['server_graph_bs']}`
@@ -320,6 +322,7 @@ async def main() -> None:
             "seed": args.seed,
             "gpu_indices": args.gpu_indices,
             "server_tp": args.server_tp,
+            "server_quantization": args.server_quantization,
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
             "server_graph_bs": args.server_graph_bs,

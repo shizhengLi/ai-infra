@@ -27,6 +27,8 @@
 | PyNCCL environment | Complete | Wheel `libnccl.so.2` linked with rpath; TP=4 API reached ready |
 | Graph-tail prefill guard | Complete, rejected | Ordering changed as intended, but C=32 P90 TPOT regressed 28.69% |
 | Graph-tail non-blocking priority | Complete, rejected | Long-output validation: C=32 P90 TPOT +0.07%, P99.9 -9.68%, throughput -0.32% |
+| FP8 W8A8 | Complete, accepted candidate | TP4 throughput +47-55%; memory/card -15.48%; MMLU -0.70 point |
+| INT4 AWQ-Marlin | Complete, quality gate failed | Qwen3-32B fits TP1; TP2 scales 1.60-1.75x; MMLU -1.23/-1.75 points |
 
 ## Decisions
 
@@ -316,4 +318,19 @@ improved throughput by 55.00%/49.48%/47.34% at C=1/8/32 and average TPOT by
 0.70-point drop inside the one-point gate. Stage A showed that FP8 eager regresses small-model
 throughput by 19-22%, whereas CUDA Graph converts it into a 10-21% gain; the accepted result is
 therefore Graph-scoped. FP8 remains default-disabled pending experiment 055's fresh-seed mixed-length
-and open-loop validation. Experiment 054 is next and will address calibrated INT4 integration.
+and open-loop validation. Experiment 054 subsequently addressed calibrated INT4 integration.
+
+## Experiment 054 result
+
+Experiment 054 added default-disabled calibrated AWQ-Marlin support: metadata validation, packed
+INT4 TP sharding and fused-projection merging, AWQ-to-Marlin weight/scale/zero-point conversion,
+persistent workspaces, and shared linear dispatch. A dtype mismatch found by the first Qwen3-4B
+Graph run was fixed by converting floating scales to the selected runtime dtype while preserving
+packed INT32 weights and zero points. The final core/misc/benchmark selection passed 84/84 tests.
+
+Qwen3-32B-AWQ now runs on one L20 at 34.69/169.66/197.74 tok/s and on two L20s at
+60.64/278.69/316.09 tok/s for C=1/8/32. TP2 scaling efficiency is 87.41%/82.13%/79.92%; sampled
+total memory is roughly 21-23 GiB, enabling a large reduction in GPU count relative to TP4 FP8.
+The one-point MMLU gate failed: official checkpoint-default FP16 AWQ dropped 1.23 points and the
+BF16-controlled run dropped 1.75 points from BF16. Accept the implementation and capacity result,
+but keep AWQ default-disabled and treat it as a conditional low-memory candidate in experiment 055.

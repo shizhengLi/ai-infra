@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 _SPLIT_DIM_0 = [".q_proj", ".k_proj", ".v_proj", ".gate_proj", ".up_proj"]
 _SPLIT_DIM_1 = [".o_proj", ".down_proj"]
+_AWQ_SUFFIXES = (".qweight", ".qzeros", ".scales")
 
 # Merge groups: individual projections -> fused projection
 _MERGE_GROUPS = {
@@ -33,6 +34,18 @@ _EXPERT_PATTERN = re.compile(r"^(?P<prefix>.+\.experts)\.(?P<idx>\d+)\.(?P<name>
 
 def _shard_tensor(key: str, value: torch.Tensor, r: int, n: int, num_kv_heads: int):
     """Extract rank r's shard from a single tensor. Returns a contiguous copy."""
+    if key.endswith(_AWQ_SUFFIXES):
+        if any(key.count(sub) for sub in _SPLIT_DIM_0):
+            is_kv_proj = any(key.count(sub) for sub in (".k_proj", ".v_proj"))
+            if is_kv_proj and num_kv_heads is not None and num_kv_heads < n:
+                channels_per_head = value.shape[1] // num_kv_heads
+                head_idx = r * num_kv_heads // n
+                start = head_idx * channels_per_head
+                return value[:, start : start + channels_per_head].clone()
+            return value.chunk(n, dim=1)[r].clone()
+        if any(key.count(sub) for sub in _SPLIT_DIM_1):
+            return value.chunk(n, dim=0)[r].clone()
+        return value
     if key.endswith(".weight_scale"):
         if any(key.count(sub) for sub in _SPLIT_DIM_0):
             is_kv_proj = any(key.count(sub) for sub in (".k_proj", ".v_proj"))
@@ -70,6 +83,10 @@ def _get_merge_info(key: str):
         if key.count(suffix):
             return key.replace(suffix, fused_suffix), _SLOT_NAMES[suffix], slots
     return None
+
+
+def _get_merge_dim(key: str) -> int:
+    return 1 if key.endswith(_AWQ_SUFFIXES) else 0
 
 
 def _get_expert_stack_info(key: str) -> tuple[str, int] | None:
@@ -118,7 +135,7 @@ def load_weight(model_path: str, device: torch.device) -> Iterator[Tuple[str, to
                         continue
                     parts = [merge_buf[merged_key][s] for s in all_slots]
                     del merge_buf[merged_key]
-                    out = (merged_key, torch.cat(parts, dim=0))
+                    out = (merged_key, torch.cat(parts, dim=_get_merge_dim(name)))
 
                 if config.is_moe and (expert_info := _get_expert_stack_info(out[0])) is not None:
                     packed_key, expert_idx = expert_info

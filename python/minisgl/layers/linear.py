@@ -8,7 +8,9 @@ from minisgl.distributed import DistributedCommunicator, get_tp_info
 from minisgl.quantization import (
     FP8_DTYPE,
     QuantizationConfig,
+    awq_marlin_linear,
     fp8_linear,
+    prepare_awq_marlin_weight,
     quantize_fp8_weight,
     validate_fp8_weight,
 )
@@ -36,16 +38,44 @@ class _LinearTPImpl(BaseOP):
         self._quantization_config = quantization_config
         if quantization_config is None:
             self.weight = torch.empty(local_osize, local_isize)
-        else:
+        elif quantization_config.method == "fp8":
             self.weight = torch.empty(local_osize, local_isize, dtype=FP8_DTYPE)
-        self.bias = torch.empty(local_osize) if has_bias else None
-        if quantization_config is not None:
             self.weight_scale = torch.empty(local_osize, dtype=torch.float32)
+        else:
+            group_size = (
+                local_isize
+                if quantization_config.group_size == -1
+                else quantization_config.group_size
+            )
+            if local_isize % group_size:
+                raise ValueError(
+                    f"Local input size {local_isize} is not divisible by "
+                    f"AWQ group size {group_size}"
+                )
+            self.qweight = torch.empty(
+                local_isize, local_osize // 8, dtype=torch.int32
+            )
+            self.scales = torch.empty(local_isize // group_size, local_osize)
+            self.qzeros = torch.empty(
+                local_isize // group_size, local_osize // 8, dtype=torch.int32
+            )
+        self.bias = torch.empty(local_osize) if has_bias else None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self._quantization_config is not None:
+        if self._quantization_config is None:
+            return F.linear(x, self.weight, self.bias)
+        if self._quantization_config.method == "fp8":
             return fp8_linear(x, self.weight, self.weight_scale, self.bias)
-        return F.linear(x, self.weight, self.bias)
+        return awq_marlin_linear(
+            x,
+            self.qweight,
+            self.scales,
+            self.qzeros,
+            self._marlin_workspace,
+            self.local_input_size,
+            self.local_output_size,
+            self.bias,
+        )
 
     def load_state_dict(
         self,
@@ -58,6 +88,25 @@ class _LinearTPImpl(BaseOP):
             return super().load_state_dict(state_dict, prefix=prefix, _internal=_internal)
 
         key_prefix = f"{prefix}." if prefix else ""
+        if self._quantization_config.method == "awq":
+            qweight = state_dict.pop(key_prefix + "qweight")
+            scales = state_dict.pop(key_prefix + "scales")
+            qzeros = state_dict.pop(key_prefix + "qzeros")
+            self.qweight, self.scales, self.qzeros, self._marlin_workspace = (
+                prepare_awq_marlin_weight(
+                    qweight,
+                    scales,
+                    qzeros,
+                    self.local_input_size,
+                    self.local_output_size,
+                    self._quantization_config.group_size,
+                )
+            )
+            self._load_bias(state_dict, key_prefix)
+            if not _internal and state_dict:
+                raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
+            return
+
         weight = state_dict.pop(key_prefix + "weight")
         checkpoint_scale = state_dict.pop(key_prefix + "weight_scale", None)
         if weight.shape != self.weight.shape:
@@ -73,16 +122,20 @@ class _LinearTPImpl(BaseOP):
                 raise ValueError("Floating-point weights must not include FP8 weight_scale")
             self.weight, self.weight_scale = quantize_fp8_weight(weight)
 
-        if self.bias is not None:
-            bias = state_dict.pop(key_prefix + "bias")
-            if bias.shape != self.bias.shape or bias.dtype != self.bias.dtype:
-                raise ValueError(
-                    f"Expected bias shape/dtype {self.bias.shape}/{self.bias.dtype}, "
-                    f"got {bias.shape}/{bias.dtype}"
-                )
-            self.bias = bias
+        self._load_bias(state_dict, key_prefix)
         if not _internal and state_dict:
             raise RuntimeError(f"Unexpected keys in state_dict: {list(state_dict.keys())}")
+
+    def _load_bias(self, state_dict: Dict[str, torch.Tensor], key_prefix: str) -> None:
+        if self.bias is None:
+            return
+        bias = state_dict.pop(key_prefix + "bias")
+        if bias.shape != self.bias.shape or bias.dtype != self.bias.dtype:
+            raise ValueError(
+                f"Expected bias shape/dtype {self.bias.shape}/{self.bias.dtype}, "
+                f"got {bias.shape}/{bias.dtype}"
+            )
+        self.bias = bias
 
 
 class LinearReplicated(_LinearTPImpl):

@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concurrency", type=int, default=32)
     parser.add_argument("--max-tokens", type=int, default=4)
     parser.add_argument("--seed", type=int, default=5300042)
-    parser.add_argument("--mode", choices=["bf16", "fp8"], required=True)
+    parser.add_argument("--mode", choices=["bf16", "fp8", "awq"], required=True)
     parser.add_argument("--json-out", type=Path, required=True)
     return parser.parse_args()
 

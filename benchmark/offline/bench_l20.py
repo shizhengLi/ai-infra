@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--attention-backend", "--attn", default="fi")
-    parser.add_argument("--quantization", choices=["fp8"], default=None)
+    parser.add_argument("--quantization", choices=["fp8", "awq"], default=None)
     parser.add_argument("--cuda-graph-max-bs", type=int, default=None)
     parser.add_argument("--max-running-requests", type=int, default=128)
     parser.add_argument("--max-seq-len", type=int, default=2048)

@@ -166,10 +166,14 @@ class Engine:
         else:
             result = {}
             for key, value in load_weight(config.model_path, self.device):
-                is_fp8_metadata = config.quantization_config is not None and (
-                    value.dtype == torch.float8_e4m3fn or key.endswith(".weight_scale")
+                quantization = config.quantization_config
+                keep_checkpoint_dtype = quantization is not None and (
+                    quantization.method == "fp8"
+                    and (value.dtype == torch.float8_e4m3fn or key.endswith(".weight_scale"))
+                    or quantization.method == "awq"
+                    and key.endswith((".qweight", ".qzeros"))
                 )
-                result[key] = value if is_fp8_metadata else value.to(self.dtype)
+                result[key] = value if keep_checkpoint_dtype else value.to(self.dtype)
             return result
 
     def _determine_num_pages(self, old_free_memory: int, config: EngineConfig) -> int:
@@ -279,9 +283,11 @@ def _adjust_config(config: EngineConfig):
 
     if config.quantization_config is not None:
         if config.dtype not in (torch.float16, torch.bfloat16):
-            raise ValueError("FP8 quantization requires float16 or bfloat16 model dtype")
+            raise ValueError("Quantized linear kernels require float16 or bfloat16 model dtype")
         if config.model_config.is_moe:
-            raise ValueError("FP8 quantization currently supports dense models only")
+            raise ValueError("Linear quantization currently supports dense models only")
+        if config.quantization_config.method == "awq" and config.use_dummy_weight:
+            raise ValueError("AWQ requires a calibrated checkpoint and cannot use dummy weights")
 
     if config.model_config.is_moe and config.moe_backend == "auto":
         override("moe_backend", "fused")
