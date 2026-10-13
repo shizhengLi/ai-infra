@@ -44,6 +44,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ttft-slo-ms", type=float, default=2000.0)
     parser.add_argument("--tpot-slo-ms", type=float, default=1000.0)
     parser.add_argument("--server-tp", type=int, default=4)
+    parser.add_argument("--server-quantization", choices=["fp8", "awq"], default=None)
+    parser.add_argument("--server-dtype", default="bfloat16")
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
     parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
@@ -332,6 +334,8 @@ streamed token; TPOT excludes the final OpenAI finish event.
 ## Configuration
 
 - Tensor parallelism: `{config['server_tp']}`
+- Runtime dtype: `{config['server_dtype']}`
+- Quantization: `{config['server_quantization'] or 'none'}`
 - Normal prefill budget: `{config['server_max_extend_tokens']}`
 - Maximum prefill streak: `{config['server_max_prefill_streak']}`
 - Decode-active prefill budget: `{config['server_decode_active_prefill_tokens']}`
@@ -460,6 +464,8 @@ async def main() -> None:
             "ttft_slo_ms": args.ttft_slo_ms,
             "tpot_slo_ms": args.tpot_slo_ms,
             "server_tp": args.server_tp,
+            "server_quantization": args.server_quantization,
+            "server_dtype": args.server_dtype,
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
             "server_max_extend_tokens": args.server_max_extend_tokens,

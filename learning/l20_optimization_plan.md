@@ -243,7 +243,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 052 | Quantization configuration, loader metadata, and `QuantLinear` skeleton | **Complete:** default-disabled FP8 loads BF16/pre-quantized weights and runs a real Qwen3-0.6B smoke test | BF16 remains unchanged; focused loader/dispatch tests pass |
 | 053 | FP8 W8A8 end-to-end integration | **Complete:** Qwen3-32B TP4 gains 47-55% throughput with a 0.70-point MMLU drop | Quality, Graph, memory, TTFT, TPOT, throughput, and repeatability gates pass |
 | 054 | INT4 AWQ-Marlin end-to-end integration | **Complete:** Qwen3-32B fits TP1/TP2 and saves cards, but misses the one-point MMLU gate | TP1/TP2 and Graph pass; default-FP16/BF16 quality drops 1.23/1.75 points |
-| 055 | Held-out quantization comparison | Converts kernel gains into a defensible deployment decision | Fresh prompts/tasks; at least three repeats; tokens/s/GPU and quality reported |
+| 055 | Held-out quantization comparison | **Complete:** fresh open-loop mixed-length runs select FP8 for the current TP4 service profile; AWQ remains capacity-only | Three repeats at three rates; tokens/s, tails, memory, and fresh quality reported |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
@@ -303,6 +303,23 @@ The strict quality gate failed. On the same 570 MMLU questions, BF16/FP8 scored 
 checkpoint-default FP16 AWQ scored 79.12% (-1.23 points), and dtype-controlled BF16 AWQ scored
 78.60% (-1.75 points). Accept the implementation and TP feasibility evidence, keep AWQ
 default-disabled, and carry it into experiment 055 only as a conditional low-memory profile.
+
+## Experiment 055 result
+
+Experiment 055 used a new seed (`5500042`), balanced 256/1024/4096-token prompts, 128-token
+outputs, three repeats, and open-loop rates of 0.5/1.0/1.5 requests/s. FP8 TP4 improved P90 TTFT
+over BF16 TP4 at all rates (1099/1553/1352 ms versus 1534/3355/2792 ms), reduced average TPOT
+from 34.00/42.22/41.26 ms to 19.71/27.16/25.92 ms, and reduced sampled memory from 19109 to
+16453 MiB/card. TTFT-SLO attainment was 100/97.2/97.2% for FP8 versus 97.2/66.7/72.2% for BF16;
+TPOT-SLO attainment stayed at 100% for both.
+
+AWQ TP1 used only about 24.3 GiB on one card, but its TTFT-SLO attainment was 61.1/27.8/22.2%
+and its 4096-token P90 TTFT reached 4807/10371/10555 ms. Keep AWQ default-disabled and describe it
+as a capacity-first option, not a latency-sensitive serving choice. The fresh MMLU seed scored
+81.93%/82.11%/82.28% for BF16/FP8/AWQ with 100% parsing; this finds no new regression, but does
+not overturn experiment 054's AWQ quality risk because a single 570-question seed is noisy.
+Accept FP8 as the current Graph/TP4 deployment candidate, retain BF16 as the reference, and do
+not change global defaults.
 
 ## Success criteria
 

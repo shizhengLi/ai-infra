@@ -334,3 +334,19 @@ total memory is roughly 21-23 GiB, enabling a large reduction in GPU count relat
 The one-point MMLU gate failed: official checkpoint-default FP16 AWQ dropped 1.23 points and the
 BF16-controlled run dropped 1.75 points from BF16. Accept the implementation and capacity result,
 but keep AWQ default-disabled and treat it as a conditional low-memory candidate in experiment 055.
+
+## Experiment 055 result
+
+Experiment 055 completed the held-out quantization comparison with a fresh seed (`5500042`), three
+repeats at 0.5/1.0/1.5 requests/s, and balanced 256/1024/4096-token prompts. FP8 TP4 beat BF16
+TP4 on P90 TTFT at every rate (1099/1553/1352 ms versus 1534/3355/2792 ms), average TPOT
+(19.71/27.16/25.92 ms versus 34.00/42.22/41.26 ms), and sampled per-card memory (16453 versus
+19109 MiB). TTFT-SLO attainment was 100/97.2/97.2% for FP8 and 97.2/66.7/72.2% for BF16; both
+achieved 100% TPOT-SLO at all rates.
+
+AWQ TP1 used about 24.3 GiB on one card but achieved only 61.1/27.8/22.2% TTFT-SLO attainment;
+4096-token P90 TTFT reached 4.81/10.37/10.56 seconds. It remains a capacity-first option and is
+not a default serving choice. Fresh MMLU was BF16 467/570 (81.93%), FP8 468/570 (82.11%), and AWQ
+469/570 (82.28%), all with 100% parse rate. These results show no new held-out regression but do
+not erase experiment 054's AWQ quality risk from a different seed. Accept FP8 as the current
+Graph/TP4 deployment candidate, keep BF16 as reference, and leave global defaults unchanged.
