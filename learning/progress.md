@@ -389,3 +389,16 @@ at 80.6%. Telemetry showed 237 prefill batches versus 255 for queue-only while m
 pressure remained 8472 tokens. Keep the mechanism default-disabled, reject it as the L20 default,
 and stop sweeping fixed thresholds; the next scheduler work should change admission/order/resource
 isolation rather than only batch size.
+
+## 上游 PR 扫描与后续路线
+
+实验058之后对上游 mini-sglang 的开放/关闭 Issue 和 PR 做了系统梳理。上游 #97 的 page-aware
+estimation、#132 的 FP8 KV cache、#110 的 FlashInfer page size >1、#56/#160 的 CUDA Graph
+shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization 都与当前 L20
+瓶颈直接相关；#134 speculative decoding、#96 expert parallelism 和 #82 hierarchical cache
+暂时超出当前 dense Qwen3-32B 主线或实现风险过高。
+
+下一阶段改为 upstream-derived PR 路线：先做 059 page-aware admission/retraction，再做 060
+预分配 request token buffer；随后评估 061 FP8 KV、062 page size >1、063 Graph shape policy
+和 064 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性 gate、显存和 TTFT/TPOT
+指标，具体设计见 `learning/upstream_pr_opportunities.md`。

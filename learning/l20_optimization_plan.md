@@ -247,6 +247,12 @@ optimization. Present the work as a bottleneck-driven loop:
 | 056 | FP8 prefill/decode scheduler sweep | **Complete:** static chunk/budget changes do not improve TTFT SLO; baseline retained and dynamic pressure control identified | Five configurations; 45 runs; no throughput/SLO regression; telemetry explains queue behavior |
 | 057 | Pending-pressure adaptive prefill budget | **Complete:** existing threshold/overload branch triggers, but fixed smaller budgets do not reduce queue peak or improve TTFT SLO | Three dynamic policies; 27 runs; trigger telemetry and end-to-end SLO comparison |
 | 058 | Joint pending-token and active-decode pressure gate | **Complete:** joint gating recovers queue-only throughput loss, but does not improve TTFT SLO | Two joint policies; 18 runs; default compatibility, telemetry, throughput, TTFT and TPOT gates |
+| 059 | Page-aware admission and safe decode retraction | **Planned:** replace rough token reserve with page-aware closed-loop estimation, based on upstream #97 | P90 TTFT -15%, pending peak -20%, throughput >=98% baseline, no stale/retracted result |
+| 060 | Preallocated `Req` token buffer | **Planned:** remove per-token O(n) CPU `torch.cat`, based on upstream #143 | Long-output append CPU time -50%, token-identical output, no decode regression |
+| 061 | L20 FP8 KV cache v2 | **Planned:** calibrated scales and fused cast/store on FlashInfer SM89 path, based on upstream #132 | KV capacity +70%, long-context ITL improvement, TTFT regression <=5%, quality gate |
+| 062 | FlashInfer page size >1 | **Planned:** remove page-size-1 limitation and validate 16/32-token pages, based on upstream #110 | Correctness under chunk/eviction/Graph, metadata overhead reduction, no P99 regression |
+| 063 | L20 memory-aware CUDA Graph shapes | **Planned:** fine-grained shapes plus padding/graph-hit telemetry, based on upstream #56/#160 | Padding waste -30%, capture memory <=1 GiB/card, throughput or TTFT improvement |
+| 064 | Batched tokenization | **Planned:** batch plain/chat tokenization and restore uid order, based on upstream #117/#55 | Tokenizer wall time 2x better at batch 32, TTFT P90 -5%, abort/order correctness |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
