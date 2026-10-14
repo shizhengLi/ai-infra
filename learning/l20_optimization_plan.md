@@ -244,6 +244,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 053 | FP8 W8A8 end-to-end integration | **Complete:** Qwen3-32B TP4 gains 47-55% throughput with a 0.70-point MMLU drop | Quality, Graph, memory, TTFT, TPOT, throughput, and repeatability gates pass |
 | 054 | INT4 AWQ-Marlin end-to-end integration | **Complete:** Qwen3-32B fits TP1/TP2 and saves cards, but misses the one-point MMLU gate | TP1/TP2 and Graph pass; default-FP16/BF16 quality drops 1.23/1.75 points |
 | 055 | Held-out quantization comparison | **Complete:** fresh open-loop mixed-length runs select FP8 for the current TP4 service profile; AWQ remains capacity-only | Three repeats at three rates; tokens/s, tails, memory, and fresh quality reported |
+| 056 | FP8 prefill/decode scheduler sweep | **Complete:** static chunk/budget changes do not improve TTFT SLO; baseline retained and dynamic pressure control identified | Five configurations; 45 runs; no throughput/SLO regression; telemetry explains queue behavior |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
@@ -320,6 +321,22 @@ as a capacity-first option, not a latency-sensitive serving choice. The fresh MM
 not overturn experiment 054's AWQ quality risk because a single 570-question seed is noisy.
 Accept FP8 as the current Graph/TP4 deployment candidate, retain BF16 as the reference, and do
 not change global defaults.
+
+## Experiment 056 result
+
+Experiment 056 retuned the accepted FP8 TP4 profile with four static scheduler alternatives against
+the 4096/1/1024 baseline. All five configurations ran 45 open-loop traces (540 requests) with no
+request errors and 100% TPOT-SLO attainment. Reducing normal prefill length to 2048 left the 1.5
+req/s TTFT SLO unchanged at 80.6% and changed throughput by less than 0.1%. Reducing the
+decode-active budget to 512 increased prefill batches from 232 to 372--380, lowered 1.5 req/s
+throughput from 153.81 to 148.62--148.70 tok/s, and did not improve TTFT SLO. Allowing two
+consecutive prefill batches raised throughput only to 154.68 tok/s but increased P99.9 TPOT from
+244.49 to 447.27 ms.
+
+All configurations reached the same maximum pending prefill pressure of 8472 tokens. Reject the
+static alternatives and retain 4096/1/1024. The next scheduler hypothesis is a pending-pressure
+adaptive budget, with a small budget only when the prefill queue crosses a threshold and the normal
+budget when pressure is low.
 
 ## Success criteria
 

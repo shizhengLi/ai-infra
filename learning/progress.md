@@ -350,3 +350,18 @@ not a default serving choice. Fresh MMLU was BF16 467/570 (81.93%), FP8 468/570 
 469/570 (82.28%), all with 100% parse rate. These results show no new held-out regression but do
 not erase experiment 054's AWQ quality risk from a different seed. Accept FP8 as the current
 Graph/TP4 deployment candidate, keep BF16 as reference, and leave global defaults unchanged.
+
+## Experiment 056 result
+
+Experiment 056 swept static FP8 TP4 prefill/decode parameters under the same held-out mixed-length
+open-loop workload. Five configurations produced 45 traces and 540 complete requests with no
+errors; TPOT-SLO attainment was 100% throughout. The accepted 4096/1/1024 baseline reached
+153.81 +/- 8.59 tok/s and 2489.72 ms P90 TTFT at 1.5 req/s, with 80.6% TTFT-SLO attainment.
+Reducing `max_prefill_length` to 2048 made no material change. Reducing decode-active budget to 512
+increased prefill batches from 232 to 372--380 and reduced throughput to about 148.6--148.7 tok/s,
+without improving TTFT-SLO. `max_prefill_streak=2` raised throughput slightly to 154.68 tok/s but
+increased P99.9 TPOT from 244.49 to 447.27 ms.
+
+Telemetry reported the same maximum pending prefill pressure, 8472 tokens, for every configuration.
+Reject all static alternatives and keep the experiment055 baseline. The next scheduler change
+should be a pending-pressure adaptive budget, not another broad static sweep.
