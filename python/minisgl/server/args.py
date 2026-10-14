@@ -207,6 +207,23 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--prefill-reserve-policy",
+        choices=["token", "page-aware"],
+        default=ServerArgs.prefill_reserve_policy,
+        help=(
+            "KV admission reservation policy. 'token' preserves the legacy estimate; "
+            "'page-aware' rounds new input/output demand to page boundaries."
+        ),
+    )
+
+    parser.add_argument(
+        "--prefill-new-token-ratio",
+        type=float,
+        default=ServerArgs.prefill_new_token_ratio,
+        help="Output fraction reserved by the page-aware prefill policy (0, 1].",
+    )
+
+    parser.add_argument(
         "--max-prefill-streak",
         type=int,
         default=ServerArgs.max_prefill_streak,

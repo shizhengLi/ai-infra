@@ -14,6 +14,8 @@ def _get_pid_suffix() -> str:
 @dataclass(frozen=True)
 class SchedulerConfig(EngineConfig):
     max_extend_tokens: int = 8192
+    prefill_reserve_policy: str = "token"
+    prefill_new_token_ratio: float = 1.0
     decode_active_prefill_tokens: int = 0
     decode_overload_prefill_tokens: int = 0
     decode_overload_prefill_threshold: int = 0

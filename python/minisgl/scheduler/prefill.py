@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from .cache import CacheManager
     from .decode import DecodeManager
+    from .reserve import PageAwareReserveEstimator
     from .table import TableManager
 
 logger = init_logger(__name__)
@@ -35,6 +36,7 @@ class PrefillAdder:
     reserved_size: int
     cache_manager: CacheManager
     table_manager: TableManager
+    reserve_estimator: PageAwareReserveEstimator | None = None
 
     def _try_allocate_one(self, req: PendingReq) -> Tuple[BaseCacheHandle, int] | None:
         if self.table_manager.available_size == 0:
@@ -43,9 +45,15 @@ class PrefillAdder:
         # TODO: consider host cache match case
         handle = self.cache_manager.match_req(req).cuda_handle
         cached_len = handle.cached_len
-        # TODO: better estimate policy
         extend_len = req.input_len - cached_len
-        estimated_len = extend_len + req.output_len
+        if self.reserve_estimator is None:
+            estimated_len = extend_len + req.output_len
+        else:
+            estimated_len = self.reserve_estimator.estimate_additional_tokens(
+                cached_len=cached_len,
+                input_len=req.input_len,
+                output_len=req.output_len,
+            )
 
         if estimated_len + self.reserved_size > self.cache_manager.available_size:
             return None
@@ -74,7 +82,14 @@ class PrefillAdder:
         is_chunked = chunk_size < remain_len
         CLS = ChunkedReq if is_chunked else Req
         self.token_budget -= chunk_size
-        self.reserved_size += remain_len + pending_req.output_len
+        if self.reserve_estimator is None:
+            self.reserved_size += remain_len + pending_req.output_len
+        else:
+            self.reserved_size += self.reserve_estimator.estimate_additional_tokens(
+                cached_len=cached_len,
+                input_len=pending_req.input_len,
+                output_len=pending_req.output_len,
+            )
         # NOTE: update the tokens ids only; new pages will be allocated in the scheduler
         _slice = slice(cached_len, cached_len + chunk_size)
         device_ids = self.table_manager.token_pool[table_idx, _slice]
@@ -118,6 +133,7 @@ class PrefillManager:
     cache_manager: CacheManager
     table_manager: TableManager
     decode_manager: DecodeManager
+    reserve_estimator: PageAwareReserveEstimator | None = None
     pending_list: List[PendingReq] = field(default_factory=list)
 
     def add_one_req(self, req: UserMsg) -> None:
@@ -133,6 +149,7 @@ class PrefillManager:
             reserved_size=self.decode_manager.inflight_tokens,
             cache_manager=self.cache_manager,
             table_manager=self.table_manager,
+            reserve_estimator=self.reserve_estimator,
         )
         reqs: List[Req] = []
         chunked_list: List[PendingReq] = []

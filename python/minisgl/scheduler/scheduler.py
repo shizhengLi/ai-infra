@@ -25,6 +25,7 @@ from .decode import DecodeManager
 from .io import SchedulerIOMixin
 from .policy import PrefillBudgetPolicy, PrefillSchedulePolicy, PrefillTelemetry
 from .prefill import ChunkedReq, PrefillManager
+from .reserve import PageAwareReserveEstimator
 from .table import TableManager
 
 if TYPE_CHECKING:
@@ -84,8 +85,22 @@ class Scheduler(SchedulerIOMixin):
             radix_partial_eviction_hotness_decay=config.radix_partial_eviction_hotness_decay,
         )
         self.decode_manager = DecodeManager(config.page_size)
+        if config.prefill_reserve_policy == "token":
+            reserve_estimator = None
+        elif config.prefill_reserve_policy == "page-aware":
+            reserve_estimator = PageAwareReserveEstimator(
+                page_size=config.page_size,
+                new_token_ratio=config.prefill_new_token_ratio,
+            )
+        else:
+            raise ValueError(
+                "prefill_reserve_policy must be either 'token' or 'page-aware'"
+            )
         self.prefill_manager = PrefillManager(
-            self.cache_manager, self.table_manager, self.decode_manager
+            self.cache_manager,
+            self.table_manager,
+            self.decode_manager,
+            reserve_estimator=reserve_estimator,
         )
 
         # some alias for easy access

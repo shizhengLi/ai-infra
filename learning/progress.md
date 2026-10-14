@@ -402,3 +402,12 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 预分配 request token buffer；随后评估 061 FP8 KV、062 page size >1、063 Graph shape policy
 和 064 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性 gate、显存和 TTFT/TPOT
 指标，具体设计见 `learning/upstream_pr_opportunities.md`。
+
+## Experiment 059 result (stage 1)
+
+实验 059 第一阶段把 prefill reserve 抽成可选的 `PageAwareReserveEstimator`，按真实
+`page_size` 对新增输入和预测输出向上取整，并接入 `PrefillAdder` 的容量检查与 reservation
+累计。默认 `token` 策略保持不变；page-aware 通过 CLI 显式 opt-in。新增策略测试和全量
+`tests/core` 分别以 33/33 和 87/87 通过。decode retraction、真实输出反馈接入和 L20 性能
+矩阵尚未完成，不能提前宣称主实验 gate 通过；详见
+`learning/experiments/059_page_aware_admission.md`。
