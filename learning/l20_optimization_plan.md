@@ -245,6 +245,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 054 | INT4 AWQ-Marlin end-to-end integration | **Complete:** Qwen3-32B fits TP1/TP2 and saves cards, but misses the one-point MMLU gate | TP1/TP2 and Graph pass; default-FP16/BF16 quality drops 1.23/1.75 points |
 | 055 | Held-out quantization comparison | **Complete:** fresh open-loop mixed-length runs select FP8 for the current TP4 service profile; AWQ remains capacity-only | Three repeats at three rates; tokens/s, tails, memory, and fresh quality reported |
 | 056 | FP8 prefill/decode scheduler sweep | **Complete:** static chunk/budget changes do not improve TTFT SLO; baseline retained and dynamic pressure control identified | Five configurations; 45 runs; no throughput/SLO regression; telemetry explains queue behavior |
+| 057 | Pending-pressure adaptive prefill budget | **Complete:** existing threshold/overload branch triggers, but fixed smaller budgets do not reduce queue peak or improve TTFT SLO | Three dynamic policies; 27 runs; trigger telemetry and end-to-end SLO comparison |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
@@ -337,6 +338,19 @@ All configurations reached the same maximum pending prefill pressure of 8472 tok
 static alternatives and retain 4096/1/1024. The next scheduler hypothesis is a pending-pressure
 adaptive budget, with a small budget only when the prefill queue crosses a threshold and the normal
 budget when pressure is low.
+
+## Experiment 057 result
+
+Experiment 057 tested the existing pressure-aware overload branch with overload budgets 512/256 and
+thresholds 4096/2048. All 27 open-loop runs (324 requests) completed with 100% TPOT-SLO attainment,
+and telemetry confirmed the dynamic branch was selected. However, every configuration still reached
+only 80.6% TTFT-SLO at 1.5 req/s. The 4096/512 policy reduced throughput from 153.81 to 151.68
+tok/s and increased P90 TTFT from 2489.72 to 2608.29 ms; earlier or more aggressive policies were
+worse. Maximum pending prefill pressure remained 8472 tokens in every case.
+
+Reject the fixed threshold/smaller-budget policy as a default. The next scheduler hypothesis must
+combine pending tokens with active decode count and remaining request prefill length, and should
+restore the large budget after pressure falls instead of repeatedly splitting the same queue.
 
 ## Success criteria
 

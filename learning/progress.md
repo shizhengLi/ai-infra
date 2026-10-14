@@ -365,3 +365,15 @@ increased P99.9 TPOT from 244.49 to 447.27 ms.
 Telemetry reported the same maximum pending prefill pressure, 8472 tokens, for every configuration.
 Reject all static alternatives and keep the experiment055 baseline. The next scheduler change
 should be a pending-pressure adaptive budget, not another broad static sweep.
+
+## Experiment 057 result
+
+Experiment 057 exercised the existing pending-pressure overload branch with 512/256-token overload
+budgets and 4096/2048-token thresholds. Three dynamic policies produced 27 open-loop runs and 324
+complete requests; all retained 100% TPOT-SLO attainment. None improved the 1.5 req/s TTFT-SLO
+above the 80.6% baseline. The best-looking 4096/512 policy actually reduced throughput from 153.81
+to 151.68 tok/s and increased P90 TTFT from 2489.72 to 2608.29 ms. Earlier or more aggressive
+triggering was worse. Telemetry confirmed the branch executed but maximum pending pressure stayed at
+8472 tokens, so smaller budgets only split work into more batches. Reject this fixed overload policy;
+the next scheduler experiment must combine pressure with active decode count and remaining prefill
+length, with recovery after the queue drains.
