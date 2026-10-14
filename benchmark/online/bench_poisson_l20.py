@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-decode-active-prefill-tokens", type=int, required=True)
     parser.add_argument("--server-decode-overload-prefill-tokens", type=int, default=0)
     parser.add_argument("--server-decode-overload-prefill-threshold", type=int, default=0)
+    parser.add_argument("--server-decode-overload-active-threshold", type=int, default=0)
     parser.add_argument("--server-decode-result-before-prefill", action="store_true")
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--json-out", type=Path)
@@ -341,6 +342,7 @@ streamed token; TPOT excludes the final OpenAI finish event.
 - Decode-active prefill budget: `{config['server_decode_active_prefill_tokens']}`
 - Decode-overload prefill budget: `{config['server_decode_overload_prefill_tokens']}`
 - Decode-overload threshold: `{config['server_decode_overload_prefill_threshold']}` pending tokens
+- Decode-overload active threshold: `{config['server_decode_overload_active_threshold']}` active decode requests
 - Decode result before prefill: `{config['server_decode_result_before_prefill']}`
 - Workload: `{config['request_count']}` requests, balanced input lengths `{config['input_lens']}`, `{config['output_len']}` output tokens
 - Arrival rates: `{config['arrival_rates']}` requests/s
@@ -475,6 +477,7 @@ async def main() -> None:
             "server_decode_overload_prefill_threshold": (
                 args.server_decode_overload_prefill_threshold
             ),
+            "server_decode_overload_active_threshold": args.server_decode_overload_active_threshold,
             "server_decode_result_before_prefill": args.server_decode_result_before_prefill,
         },
         "runs": runs,

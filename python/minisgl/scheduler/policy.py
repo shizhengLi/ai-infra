@@ -33,6 +33,7 @@ class PrefillBudgetPolicy:
     decode_active_budget: int = 0
     decode_overload_budget: int = 0
     decode_overload_threshold: int = 0
+    decode_overload_active_threshold: int = 0
 
     def __post_init__(self) -> None:
         if self.default_budget <= 0:
@@ -45,14 +46,27 @@ class PrefillBudgetPolicy:
         overload_enabled = self.decode_overload_budget > 0
         if overload_enabled != (self.decode_overload_threshold > 0):
             raise ValueError("decode-overload budget and threshold must be enabled together")
+        if self.decode_overload_active_threshold < 0:
+            raise ValueError("decode-overload active threshold must be non-negative")
+        if self.decode_overload_active_threshold > 0 and not overload_enabled:
+            raise ValueError("decode-overload active threshold requires an overload budget")
 
-    def select(self, *, decode_runnable: bool, pending_prefill_tokens: int = 0) -> int:
+    def select(
+        self,
+        *,
+        decode_runnable: bool,
+        pending_prefill_tokens: int = 0,
+        active_decode_requests: int = 0,
+    ) -> int:
         if pending_prefill_tokens < 0:
             raise ValueError("pending prefill tokens must be non-negative")
+        if active_decode_requests < 0:
+            raise ValueError("active decode requests must be non-negative")
         if (
             decode_runnable
             and self.decode_overload_budget > 0
             and pending_prefill_tokens >= self.decode_overload_threshold
+            and active_decode_requests >= self.decode_overload_active_threshold
         ):
             return self.decode_overload_budget
         if decode_runnable and self.decode_active_budget > 0:

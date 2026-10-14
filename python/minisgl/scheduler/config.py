@@ -17,6 +17,7 @@ class SchedulerConfig(EngineConfig):
     decode_active_prefill_tokens: int = 0
     decode_overload_prefill_tokens: int = 0
     decode_overload_prefill_threshold: int = 0
+    decode_overload_active_threshold: int = 0
     max_prefill_streak: int = 0
     decode_result_before_prefill: bool = False
     decode_graph_tail_prefill_batch_size: int = 0

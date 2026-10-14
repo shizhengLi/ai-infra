@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from minisgl.scheduler.policy import PrefillBudgetPolicy, PrefillSchedulePolicy, PrefillTelemetry
 from minisgl.scheduler.scheduler import Scheduler
+from minisgl.server.args import parse_args
 
 
 def _guard_scheduler(*, guard_size: int, padded_size: int, prefill_runnable: bool):
@@ -148,6 +149,26 @@ def test_decode_overload_prefill_budget_uses_queue_pressure() -> None:
     assert policy.select(decode_runnable=True, pending_prefill_tokens=4096) == 2048
 
 
+def test_decode_overload_prefill_budget_can_require_active_decode_pressure() -> None:
+    policy = PrefillBudgetPolicy(
+        default_budget=8192,
+        decode_active_budget=4096,
+        decode_overload_budget=2048,
+        decode_overload_threshold=4096,
+        decode_overload_active_threshold=4,
+    )
+    assert policy.select(
+        decode_runnable=True,
+        pending_prefill_tokens=8192,
+        active_decode_requests=3,
+    ) == 4096
+    assert policy.select(
+        decode_runnable=True,
+        pending_prefill_tokens=4096,
+        active_decode_requests=4,
+    ) == 2048
+
+
 def test_decode_overload_budget_and_threshold_are_enabled_together() -> None:
     for budget, threshold in ((2048, 0), (0, 4096)):
         try:
@@ -177,6 +198,37 @@ def test_decode_overload_budget_cannot_exceed_active_budget() -> None:
         raise AssertionError("oversized decode-overload prefill budget was accepted")
 
 
+def test_decode_overload_active_threshold_requires_overload_budget() -> None:
+    try:
+        PrefillBudgetPolicy(
+            default_budget=8192,
+            decode_active_budget=4096,
+            decode_overload_active_threshold=4,
+        )
+    except ValueError as exc:
+        assert "requires an overload budget" in str(exc)
+    else:
+        raise AssertionError("orphan decode-overload active threshold was accepted")
+
+
+def test_decode_overload_active_threshold_cli_mapping() -> None:
+    args, _ = parse_args(
+        [
+            "--model",
+            "unused",
+            "--dtype",
+            "bfloat16",
+            "--decode-overload-prefill-length",
+            "512",
+            "--decode-overload-prefill-threshold",
+            "4096",
+            "--decode-overload-active-threshold",
+            "6",
+        ]
+    )
+    assert args.decode_overload_active_threshold == 6
+
+
 def test_pending_prefill_tokens_cannot_be_negative() -> None:
     policy = PrefillBudgetPolicy(default_budget=8192)
     try:
@@ -185,6 +237,16 @@ def test_pending_prefill_tokens_cannot_be_negative() -> None:
         assert "must be non-negative" in str(exc)
     else:
         raise AssertionError("negative pending prefill tokens were accepted")
+
+
+def test_active_decode_requests_cannot_be_negative() -> None:
+    policy = PrefillBudgetPolicy(default_budget=8192)
+    try:
+        policy.select(decode_runnable=True, active_decode_requests=-1)
+    except ValueError as exc:
+        assert "must be non-negative" in str(exc)
+    else:
+        raise AssertionError("negative active decode requests were accepted")
 
 
 def test_prefill_telemetry_tracks_budget_binding() -> None:

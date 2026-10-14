@@ -246,6 +246,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 055 | Held-out quantization comparison | **Complete:** fresh open-loop mixed-length runs select FP8 for the current TP4 service profile; AWQ remains capacity-only | Three repeats at three rates; tokens/s, tails, memory, and fresh quality reported |
 | 056 | FP8 prefill/decode scheduler sweep | **Complete:** static chunk/budget changes do not improve TTFT SLO; baseline retained and dynamic pressure control identified | Five configurations; 45 runs; no throughput/SLO regression; telemetry explains queue behavior |
 | 057 | Pending-pressure adaptive prefill budget | **Complete:** existing threshold/overload branch triggers, but fixed smaller budgets do not reduce queue peak or improve TTFT SLO | Three dynamic policies; 27 runs; trigger telemetry and end-to-end SLO comparison |
+| 058 | Joint pending-token and active-decode pressure gate | **Complete:** joint gating recovers queue-only throughput loss, but does not improve TTFT SLO | Two joint policies; 18 runs; default compatibility, telemetry, throughput, TTFT and TPOT gates |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
@@ -351,6 +352,20 @@ worse. Maximum pending prefill pressure remained 8472 tokens in every case.
 Reject the fixed threshold/smaller-budget policy as a default. The next scheduler hypothesis must
 combine pending tokens with active decode count and remaining request prefill length, and should
 restore the large budget after pressure falls instead of repeatedly splitting the same queue.
+
+## Experiment 058 result
+
+Experiment 058 added a default-compatible active-decode threshold to the overload policy. Two joint
+configurations completed 18 open-loop runs and 216 requests with 100% TPOT-SLO attainment. At 1.5
+req/s, the 4096 pending / 512 budget / 6 active-decode candidate reached 153.47 tok/s, 2496.96 ms
+P90 TTFT, and 235.16 ms P99.9 TPOT. This recovered nearly all throughput lost by experiment057's
+queue-only 512 budget, but did not improve the baseline's 80.6% TTFT-SLO attainment.
+
+Telemetry explains both outcomes: joint gating reduced prefill batches from the queue-only policy's
+255 to 237, while maximum pending pressure stayed at 8472 tokens. Retain the mechanism as an opt-in
+diagnostic/tuning control, but do not change the L20 deployment default. Further fixed-threshold
+sweeps are unlikely to address the queueing cause; the next scheduler experiment should evaluate
+admission control or waiting-time/remaining-prefill-aware ordering.
 
 ## Success criteria
 

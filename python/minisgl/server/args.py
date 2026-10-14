@@ -243,6 +243,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--decode-overload-active-threshold",
+        type=int,
+        default=ServerArgs.decode_overload_active_threshold,
+        help=(
+            "Active decode request count required in addition to pending-token pressure. "
+            "Zero preserves the queue-only overload policy."
+        ),
+    )
+
+    parser.add_argument(
         "--decode-result-before-prefill",
         action="store_true",
         default=ServerArgs.decode_result_before_prefill,

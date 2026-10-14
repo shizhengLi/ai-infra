@@ -377,3 +377,15 @@ triggering was worse. Telemetry confirmed the branch executed but maximum pendin
 8472 tokens, so smaller budgets only split work into more batches. Reject this fixed overload policy;
 the next scheduler experiment must combine pressure with active decode count and remaining prefill
 length, with recovery after the queue drains.
+
+## Experiment 058 result
+
+Experiment 058 added a default-compatible active-decode threshold to the pending-pressure overload
+policy and evaluated two joint gates over 18 open-loop runs and 216 complete requests. The strongest
+candidate, 4096 pending tokens / 512 budget / 6 active decodes, reached 153.47 tok/s and 2496.96 ms
+P90 TTFT at 1.5 req/s, versus 153.81 tok/s and 2489.72 ms for baseline. It recovered almost all of
+experiment057's queue-only throughput loss and reduced P99.9 TPOT to 235.16 ms, but TTFT-SLO stayed
+at 80.6%. Telemetry showed 237 prefill batches versus 255 for queue-only while maximum pending
+pressure remained 8472 tokens. Keep the mechanism default-disabled, reject it as the L20 default,
+and stop sweeping fixed thresholds; the next scheduler work should change admission/order/resource
+isolation rather than only batch size.

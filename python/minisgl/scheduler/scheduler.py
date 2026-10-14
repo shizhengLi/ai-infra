@@ -99,6 +99,7 @@ class Scheduler(SchedulerIOMixin):
             decode_active_budget=config.decode_active_prefill_tokens,
             decode_overload_budget=config.decode_overload_prefill_tokens,
             decode_overload_threshold=config.decode_overload_prefill_threshold,
+            decode_overload_active_threshold=config.decode_overload_active_threshold,
         )
         self.prefill_telemetry = PrefillTelemetry()
         self.prefill_telemetry_path = config.prefill_telemetry_path
@@ -359,6 +360,7 @@ class Scheduler(SchedulerIOMixin):
             prefill_budget = self.prefill_budget_policy.select(
                 decode_runnable=self.decode_manager.runnable,
                 pending_prefill_tokens=pending_tokens,
+                active_decode_requests=active_decode_requests,
             )
             if self.prefill_telemetry_enabled and self.prefill_manager.runnable:
                 self.prefill_telemetry.record_selection(
