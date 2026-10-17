@@ -97,10 +97,29 @@ quality gate。
 因此 FP8 KV 仍保持显式 opt-in，不改变默认配置，也不能把本实验的 capacity 收益直接
 等同为吞吐收益。
 
+## 061c：FlashInfer attention 误差与 kernel 对照
+
+新增 `benchmark/offline/bench_fp8_kv_attention.py`，在同一批 BF16 Q/K/V 上分别运行
+BF16 KV 和 FP8 E4M3 KV，统计 attention 输出的 relative L2、cosine、饱和率和 decode
+kernel 时间。参数为 L20 SM89、GQA 32/8、head_dim=128、`activation_std=0.2`、seed
+`6100042`；这是 kernel/量化误差实验，不等同于模型真实激活质量。
+
+| Context | Scale | Saturation | Relative L2 | Cosine | BF16 ms | FP8 ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2,048 | 0.25 | 0% | 2.760% | 0.999621 | 0.0462 | 0.0675 |
+| 8,192 | 0.0025 | 0% | 2.810% | 0.999607 | 0.0302 | 0.0444 |
+| 8,192 | 0.00125 | 0.503% | 4.275% | 0.999106 | 0.0302 | 0.0452 |
+| 16,384 | 0.002588 calibrated | 0% | 2.825% | 0.999601 | 0.0408 | 0.0444 |
+
+`scale=0.25` 在这组分布中没有饱和，但相对误差仍约 2.8%；calibrated scale 主要避免
+极值饱和，不能消除 E4M3 固有的相对量化误差。FP8 decode 在 2k/8k 的小 batch kernel
+上比 BF16 慢约 46%，到 16k context 差距缩小到约 9%。这说明 FP8 KV 的主要确定性收益
+仍是容量，不应直接宣传为 ITL 加速；真实模型质量和端到端 ITL 仍需单独 gate。
+
 ## 下一步
 
-1. 增加 rank-0 calibration summary（每层 scale、饱和率、有效 token 数），并用同一批
-   activation 对比固定 scale 与校准 scale 的 attention 输出误差。
+1. 增加 rank-0 calibration summary（每层 scale、饱和率、有效 token 数），并在真实
+   Qwen3 激活上复现实验 061c 的误差结论。
 2. 将 BF16-to-FP8 cast 与 page store 合并为 CUDA kernel，测量写入开销和 prefill TTFT。
 3. 在 4096/8192/16384 上下文、短输出和长输出 workload 中做 BF16 KV vs FP8 KV 的
    ITL、TTFT、吞吐和质量对照；若 quality gate 通过，再进入默认策略评审。

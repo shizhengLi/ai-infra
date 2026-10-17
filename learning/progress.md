@@ -44,7 +44,9 @@ finite。Qwen3-32B FP8 W8A8 TP4 在 GPU 2/3/6/7 上，BF16 KV 为 413,820 tokens
 约剩 4.40 GiB/card，FP8 API 请求返回 HTTP 200。随后增加了 `first_batch` per-layer
 calibration：graph-disabled 的真实 Qwen3-32B TP4 服务首个 prefill 请求同样返回 HTTP 200，
 且 calibration smoke 验证 scale 会在首批后固定。当前仍未完成 fused cast/store、长上下文
-ITL/TTFT 和质量 gate，因此不改变默认配置，完整 v2 仍在进行中。详细记录见
+ITL/TTFT 和质量 gate，因此不改变默认配置，完整 v2 仍在进行中。061c 的 FlashInfer
+同批 Q/K/V 对照显示 E4M3 relative-L2 约 2.8%；`scale=0.25` 无饱和但没有明显优于
+calibrated scale，过小 scale 会引入饱和，且短上下文 FP8 kernel 可能慢于 BF16。详细记录见
 `learning/experiments/061_fp8_kv_cache_v2.md`。
 
 ## Decisions
