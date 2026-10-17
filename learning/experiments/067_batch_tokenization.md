@@ -1,7 +1,7 @@
 # 实验 067：批量 TokenizeManager
 
 日期：2026-10-17  
-状态：Stage 1 完成；CPU tokenizer 门槛通过，在线 TTFT gate 待在固定服务矩阵中验证
+状态：Stage 2 完成；CPU 门槛和多 tokenizer 正确性通过，低到达率在线 TTFT gate 未通过
 
 ## 背景与目标
 
@@ -86,20 +86,47 @@ median 加速为 **2.26x**，mean 加速为 **2.51x**，达到预注册的“32 
 门槛。这个结果只代表 CPU tokenizer 阶段；它不等价于端到端生成吞吐提升，因为低到达率
 时 tokenizer worker 可能只收到一条消息，GPU prefill/decode 仍然是主要耗时。
 
-## 尚未完成的在线 gate
+## Stage 2：真实 L20 在线验证
 
-预注册的完整 gate 还包括在相同 Qwen3-32B FP8 TP4 服务、相同 seed 和 1.5/2.5 req/s
-Poisson trace 下比较 `--tokenizer-batch-size 1` 与 `32` 的 TTFT P90，并在
-`num_tokenizer=0/2/4` 下验证输出顺序、abort 和 streaming。当前 Stage 1 已完成实现、协议
-单测和 CPU 等价性/性能验证；在线矩阵需要占用四张 L20 并单独记录服务启动、Graph 和
-tokenizer worker 配置，不能用本地微基准替代。
+在 GPU 2/3/6/7 上启动 Qwen3-32B FP8 TP4，固定 FlashInfer、coarse Graph 32、
+`max_prefill_streak=1`、decode-active prefill 2304 和相同 seed。每个 profile 使用
+12 请求、输入长度 128/256/512、输出 64 token、1.5/2.5 req/s、每档 2 次重复。
+
+| Arrival rate | batch=1 tok/s | batch=32 tok/s | 吞吐变化 | batch=1 P90 TTFT ms | batch=32 P90 TTFT ms | TTFT 变化 | batch=1 P99 TPOT ms | batch=32 P99 TPOT ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.5 | 102.86 | 102.81 | -0.06% | 223.44 | 229.32 | +2.63% | 107.92 | 107.89 |
+| 2.5 | 179.89 | 179.66 | -0.13% | 226.37 | 226.85 | +0.21% | 166.96 | 167.88 |
+
+两组 profile 的 TTFT 和 TPOT SLO 均为 100%，但 batch=32 没有达到预注册的 TTFT P90
+下降 5% 门槛。原因符合队列模型：1.5/2.5 req/s 下 tokenizer worker 大多数时候只收到
+一条消息，`local_bs=32` 不会等待额外窗口，因此 batch API 很少能形成 32 条 batch；CPU
+阶段的 2.26x 微基准收益没有传递到端到端 TTFT。
+
+### 多 tokenizer streaming smoke
+
+使用 `--dummy-weight`、TP4、`max-seq-len=1024` 的轻量服务，不用于性能结论：
+
+- `num_tokenizer=2`：8 个并发请求均返回 8 个 streaming chunk，均有文本且
+  `finish_reason=stop`。
+- `num_tokenizer=4`：同样的 8/8 请求全部通过，未观察到 uid 交叉或输出丢失。
+- `num_tokenizer=0`：真实 Qwen3-32B FP8 在线矩阵的 24 个请求全部 HTTP 200，streaming
+  正常。
+
+本次 smoke 没有强行中断正在生成的请求，因此 abort 专项仍需后续用可控客户端断开连接和
+短输出请求补测；当前结果足以确认多 tokenizer 的正常路由和 streaming 基本路径。
+
+原始在线结果：
+
+- [batch=1 Markdown](../results/067_bs1.md)
+- [batch=32 Markdown](../results/067_bs32.md)
 
 ## 结论
 
 批量 TokenizeManager 是一个边界清晰、可回滚的前端 CPU 优化：默认 batch 上限为 32，
-输入协议和输出 token 完全兼容，混合请求 CPU tokenizer wall time 降低约一半。当前接受
-为 Stage 1 候选；在在线 TTFT P90 达到至少 5% 改善、且多 tokenizer/abort/streaming gate
-通过前，不宣称它是最终 L20 默认部署配置。
+输入协议和输出 token 完全兼容，混合请求 CPU tokenizer wall time 降低约一半。Stage 2
+证明它在低到达率下没有显著端到端回归，但也没有达到 TTFT P90 -5% 的性能 gate。因此保留
+`--tokenizer-batch-size 32` 作为 CPU 高并发候选配置，不把本实验宣称为低负载 L20 TTFT
+优化；后续只有在更高请求速率或增加短微批等待窗口时，才值得继续做 tokenizer 专项优化。
 
 ## 代码与测试
 
