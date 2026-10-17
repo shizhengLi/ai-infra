@@ -17,6 +17,7 @@ class ServerArgs(SchedulerConfig):
     server_port: int = 1919
     num_tokenizer: int = 0
     tokenizer_batch_size: int = 32
+    tokenizer_batch_wait_ms: float = 0.0
     silent_output: bool = False
 
     @property
@@ -272,6 +273,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--tokenizer-batch-wait-ms",
+        type=float,
+        default=ServerArgs.tokenizer_batch_wait_ms,
+        help="Optional micro-batch wait after a tokenize message arrives; default is 0 ms.",
+    )
+
+    parser.add_argument(
         "--max-prefill-length",
         "--max-extend-length",
         type=int,
@@ -493,6 +501,8 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     if kwargs["tokenizer_batch_size"] < 1:
         parser.error("--tokenizer-batch-size must be at least 1")
+    if kwargs["tokenizer_batch_wait_ms"] < 0:
+        parser.error("--tokenizer-batch-wait-ms must be non-negative")
 
     # resolve some arguments
     run_shell |= kwargs.pop("shell_mode")

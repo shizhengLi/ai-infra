@@ -522,7 +522,7 @@ l20 吞吐分别提升 1.00%/0.87%/0.67%；P90 TTFT 在三档负载变化为 +0.
 P99 TPOT 在 8/12 req/s 分别下降 5.07%/16.41%，但 4 req/s 上升 11.03%，因此仍未满足
 “无 P99 回退”的默认 gate。l20 保留为条件 L20 profile，默认 coarse 不变。
 
-## 实验 067 结果（Stage 2）
+## 实验 067 结果（Stage 3）
 
 实验 067 将 tokenizer worker 的最大本地 batch 暴露为 `--tokenizer-batch-size`，默认值
 为 32；`TokenizeManager` 按 plain/chat 分组调用 batch API，再按原索引恢复 ragged token
@@ -532,5 +532,6 @@ ids。新增 focused tests 3/3 通过，相关回归 13/13 通过；本地 Qwen3
 batch=32 相对 batch=1 在 1.5/2.5 req/s 的吞吐变化为 -0.06%/-0.13%，P90 TTFT 变化为
 +2.63%/+0.21%，未达到 TTFT -5% gate；两组 SLO 均为 100%。`num_tokenizer=2/4` 的
 dummy-weight streaming smoke 和 `num_tokenizer=0` 的真实请求均通过。结论是保留 batch=32
-作为高并发 CPU 候选，不宣称低到达率端到端收益，详见
+作为高并发 CPU 候选。新增 1 ms 微批等待窗口后，1.5 req/s P90 TTFT 进一步下降 4.32%，
+但未达到 -5% gate；2.5 req/s 变化 +0.08%，因此等待参数默认保持 0 ms。详见
 `learning/experiments/067_batch_tokenization.md`。

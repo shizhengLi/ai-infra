@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import time
 from typing import List
 
 import torch
@@ -36,6 +37,7 @@ def tokenize_worker(
     backend_addr: str,
     frontend_addr: str,
     local_bs: int,
+    batch_wait_ms: float = 0.0,
     tokenizer_id: int = -1,
     model_source: str = "huggingface",
     ack_queue: mp.Queue[str] | None = None,
@@ -44,6 +46,7 @@ def tokenize_worker(
     send_frontend = ZmqPushQueue(frontend_addr, create=False, encoder=BaseFrontendMsg.encoder)
     recv_listener = ZmqPullQueue(addr, create=create, decoder=BatchTokenizerMsg.decoder)
     assert local_bs > 0
+    assert batch_wait_ms >= 0
     tokenizer = load_tokenizer(tokenizer_path)
     logger = init_logger(__name__, f"tokenizer_{tokenizer_id}")
 
@@ -59,8 +62,20 @@ def tokenize_worker(
     try:
         while True:
             pending_msg = _unwrap_msg(recv_listener.get())
-            while len(pending_msg) < local_bs and not recv_listener.empty():
-                pending_msg.extend(_unwrap_msg(recv_listener.get()))
+            has_tokenize_msg = any(isinstance(msg, TokenizeMsg) for msg in pending_msg)
+            deadline = time.monotonic() + batch_wait_ms / 1000 if has_tokenize_msg else None
+            while len(pending_msg) < local_bs:
+                if recv_listener.empty():
+                    if deadline is None:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(remaining, 0.0002))
+                    continue
+                new_msgs = _unwrap_msg(recv_listener.get())
+                pending_msg.extend(new_msgs)
+                has_tokenize_msg |= any(isinstance(msg, TokenizeMsg) for msg in new_msgs)
 
             logger.debug(f"Received {len(pending_msg)} messages")
 

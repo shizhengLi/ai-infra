@@ -74,9 +74,13 @@ def test_tokenizer_batch_size_is_configurable_and_positive() -> None:
     base_args = ["--model", "unused", "--dtype", "bfloat16"]
     default_args, _ = parse_args(base_args)
     assert default_args.tokenizer_batch_size == 32
+    assert default_args.tokenizer_batch_wait_ms == 0.0
 
-    args, _ = parse_args([*base_args, "--tokenizer-batch-size", "16"])
+    args, _ = parse_args(
+        [*base_args, "--tokenizer-batch-size", "16", "--tokenizer-batch-wait-ms", "1.5"]
+    )
     assert args.tokenizer_batch_size == 16
+    assert args.tokenizer_batch_wait_ms == 1.5
 
     try:
         parse_args([*base_args, "--tokenizer-batch-size", "0"])
@@ -84,3 +88,10 @@ def test_tokenizer_batch_size_is_configurable_and_positive() -> None:
         assert exc.code == 2
     else:
         raise AssertionError("zero tokenizer batch size must be rejected")
+
+    try:
+        parse_args([*base_args, "--tokenizer-batch-wait-ms", "-0.1"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("negative tokenizer batch wait must be rejected")

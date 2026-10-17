@@ -1,7 +1,7 @@
 # 实验 067：批量 TokenizeManager
 
 日期：2026-10-17  
-状态：Stage 2 完成；CPU 门槛和多 tokenizer 正确性通过，低到达率在线 TTFT gate 未通过
+状态：Stage 3 完成；1 ms 微批窗口改善轻负载尾延迟但未达到 gate，默认保持 0 ms
 
 ## 背景与目标
 
@@ -120,13 +120,32 @@ median 加速为 **2.26x**，mean 加速为 **2.51x**，达到预注册的“32 
 - [batch=1 Markdown](../results/067_bs1.md)
 - [batch=32 Markdown](../results/067_bs32.md)
 
+## Stage 3：短微批等待窗口
+
+为验证“请求太稀疏导致凑不成 batch”的假设，增加显式 `--tokenizer-batch-wait-ms`。首条
+消息是 `TokenizeMsg` 时，worker 最多等待该时长收集后续消息；纯 detokenize/abort 首条消息
+不等待。默认值为 `0.0`，因此原有行为完全兼容。
+
+在同一 Qwen3-32B FP8 TP4、相同 seed 和 workload 下比较 `batch_size=32, wait=1.0 ms`
+与此前 `batch_size=1, wait=0 ms`：
+
+| Arrival rate | wait=0 tok/s | wait=1 ms tok/s | 吞吐变化 | wait=0 P90 TTFT ms | wait=1 ms P90 TTFT ms | TTFT 变化 | wait=0 P99 TPOT ms | wait=1 ms P99 TPOT ms |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.5 | 102.86 | 102.93 | +0.07% | 223.45 | 213.79 | -4.32% | 107.92 | 107.50 |
+| 2.5 | 179.89 | 179.83 | -0.03% | 226.37 | 226.55 | +0.08% | 166.96 | 165.71 |
+
+1.5 req/s 的 P90 TTFT 已接近但没有达到预注册的 -5% 门槛；2.5 req/s 几乎没有变化。吞吐
+没有显著回归，说明 1 ms 等待窗口的成本可控，但当前 workload 下不足以成为默认优化。
+
+原始结果见 [wait=1 ms Markdown](../results/067_wait1.md)。
+
 ## 结论
 
 批量 TokenizeManager 是一个边界清晰、可回滚的前端 CPU 优化：默认 batch 上限为 32，
 输入协议和输出 token 完全兼容，混合请求 CPU tokenizer wall time 降低约一半。Stage 2
-证明它在低到达率下没有显著端到端回归，但也没有达到 TTFT P90 -5% 的性能 gate。因此保留
-`--tokenizer-batch-size 32` 作为 CPU 高并发候选配置，不把本实验宣称为低负载 L20 TTFT
-优化；后续只有在更高请求速率或增加短微批等待窗口时，才值得继续做 tokenizer 专项优化。
+证明它在低到达率下没有显著端到端回归；1 ms 等待窗口只将 1.5 req/s P90 TTFT 改善
+4.32%，仍未达到 -5% gate。因此保留 `--tokenizer-batch-size 32` 作为 CPU 高并发候选，
+`--tokenizer-batch-wait-ms` 默认保持 0.0；不把本实验宣称为低负载 L20 TTFT 优化。
 
 ## 代码与测试
 
