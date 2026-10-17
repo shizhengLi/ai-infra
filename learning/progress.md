@@ -58,6 +58,17 @@ calibrated scale，过小 scale 会引入饱和，且短上下文 FP8 kernel 可
 加权饱和率 0.00226%。结果支持继续做长上下文质量 gate，但不能把短请求 telemetry 当成
 质量或 TTFT 结论。详见 `learning/experiments/061_fp8_kv_cache_v2.md`。
 
+### Experiment 062 result: FP8 KV long-context gate
+
+实验 062 在相同 Qwen3-32B FP8 W8A8 TP4 配置下，对 BF16 KV 和 FP8 KV 做了 4096/8192/16384
+输入、并发 1、32-token 输出的 eager 对照。FP8 的 KV capacity 仍为 BF16 的 2.00x，三种长度
+均 HTTP 200；长上下文 telemetry 累计饱和率仅 0.000843%。同一个 4096-token prompt 在
+temperature=0/top_k=1 下两种 dtype 输出 SHA-256 完全一致，完成 deterministic smoke。
+但当前 FP8 eager decode 相对 BF16 的 TPOT 仍慢 36.73%--69.34%，输出吞吐低 10.26%--29.22%；
+16K TTFT 接近 BF16，但端到端仍慢 10.72%。因此 062 接受 capacity/校准/正确性，不接受
+端到端性能加速，下一步做 fused cast/store CUDA kernel。详见
+`learning/experiments/062_fp8_kv_long_context_gate.md`。
+
 ## Decisions
 
 - Start with Qwen3-0.6B because it makes iteration cheap; do not generalize its absolute throughput
@@ -427,8 +438,8 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 暂时超出当前 dense Qwen3-32B 主线或实现风险过高。
 
 下一阶段改为 upstream-derived PR 路线：先做 059 page-aware admission/retraction，再做 060
-预分配 request token buffer；随后评估 061 FP8 KV、062 page size >1、063 Graph shape policy
-和 064 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性 gate、显存和 TTFT/TPOT
+预分配 request token buffer；随后评估 061/062 FP8 KV、063 page size >1、064 Graph shape policy
+和 065 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性 gate、显存和 TTFT/TPOT
 指标，具体设计见 `learning/upstream_pr_opportunities.md`。
 
 ## Experiment 059 result (stage 1)
