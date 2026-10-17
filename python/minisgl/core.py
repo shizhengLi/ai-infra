@@ -44,11 +44,16 @@ class Req:
     def __post_init__(self) -> None:
         assert self.input_ids.is_cpu
         self.device_len = len(self.input_ids)
+        # Keep the original prompt boundary.  During decode ``input_ids`` grows,
+        # and a paused request must retain this boundary for lifecycle tracking.
+        self.prompt_len = self.device_len
         self.max_device_len = self.device_len + self.output_len
         assert 0 <= self.cached_len < self.device_len <= self.max_device_len
         self.append_count = 0
         self.append_allocations = 0
         self.append_copied_tokens = 0
+        self.retracted = False
+        self.generation = 0
         self._append_mode = _REQ_APPEND_MODE
         if self._append_mode == "cat":
             return
@@ -75,6 +80,15 @@ class Req:
     def complete_one(self) -> None:
         self.cached_len = self.device_len
         self.device_len += 1
+
+    def mark_retracted(self) -> None:
+        """Invalidate this scheduled incarnation while the request is paused."""
+        self.retracted = True
+        self.generation += 1
+
+    def mark_resumed(self) -> None:
+        self.retracted = False
+        self.generation += 1
 
     def append_host(self, next_token: torch.Tensor) -> None:
         next_token = next_token.reshape(-1)

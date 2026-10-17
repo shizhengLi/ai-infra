@@ -82,3 +82,20 @@ def test_cli_selects_page_aware_policy() -> None:
     )
     assert args.prefill_reserve_policy == "page-aware"
     assert args.prefill_new_token_ratio == pytest.approx(0.75)
+
+
+def test_cli_enables_safe_retraction_explicitly() -> None:
+    from minisgl.server.args import parse_args
+
+    args, _ = parse_args(
+        [
+            "--model",
+            "unused",
+            "--dtype",
+            "bfloat16",
+            "--prefill-reserve-policy",
+            "page-aware",
+            "--prefill-safe-retraction",
+        ]
+    )
+    assert args.prefill_safe_retraction is True

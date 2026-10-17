@@ -273,6 +273,8 @@ def test_prefill_telemetry_tracks_budget_binding() -> None:
         "host_append_ns": 0,
         "host_append_allocations": 0,
         "host_append_copied_tokens": 0,
+        "retraction_count": 0,
+        "retracted_tokens": 0,
         "batch_execution_samples": [
             {
                 "selected_budget": 2048,

@@ -86,6 +86,8 @@ class PrefillTelemetry:
     host_append_ns: int = 0
     host_append_allocations: int = 0
     host_append_copied_tokens: int = 0
+    retraction_count: int = 0
+    retracted_tokens: int = 0
     batch_execution_samples: list[dict[str, int | float | bool]] = field(default_factory=list)
 
     def record_selection(self, budget: int, pending_tokens: int, pending_requests: int) -> None:
@@ -109,6 +111,10 @@ class PrefillTelemetry:
         self.host_append_allocations += allocations
         self.host_append_copied_tokens += copied_tokens
 
+    def record_retraction(self, tokens: int) -> None:
+        self.retraction_count += 1
+        self.retracted_tokens += tokens
+
     def drain_execution_samples(self) -> None:
         self.batch_execution_samples.clear()
 
@@ -128,5 +134,7 @@ class PrefillTelemetry:
             "host_append_ns": self.host_append_ns,
             "host_append_allocations": self.host_append_allocations,
             "host_append_copied_tokens": self.host_append_copied_tokens,
+            "retraction_count": self.retraction_count,
+            "retracted_tokens": self.retracted_tokens,
             "batch_execution_samples": list(self.batch_execution_samples),
         }

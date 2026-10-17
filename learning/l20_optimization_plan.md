@@ -383,6 +383,14 @@ admission control or waiting-time/remaining-prefill-aware ordering.
 - The result is meaningful on a model/load representative of the optimized path.
 - Each experiment has a numbered Markdown note under `learning/experiments/`.
 
+## 实验 068 当前状态
+
+实验 068 已完成 safe decode retraction 的离线和一次 L20 限页压力验证：候选按 page demand
+选择，当前 in-flight batch 受保护，已有 KV 的请求暂停后原地恢复，默认路径保持关闭。
+`tests/core` 当前 109/109 通过。在线结果显示吞吐变化 -0.18%/-0.93%，P90 TTFT 没有改善，
+但输出长度、page integrity 正确；高达 143/706 次 retraction 暴露 reservation thrashing。
+因此性能 gate 拒绝，下一步若继续必须先加入 hysteresis/收益阈值，不直接扩大流量或改变默认值。
+
 ## Experiment 067 result
 
 Experiment 067 Stage 3 added an opt-in tokenizer micro-batch wait. With a 1 ms wait, P90 TTFT

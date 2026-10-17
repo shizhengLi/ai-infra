@@ -306,6 +306,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--prefill-safe-retraction",
+        action="store_true",
+        default=ServerArgs.prefill_safe_retraction,
+        help=(
+            "When page-aware admission is blocked, pause a decode request that is not "
+            "in the current GPU batch. Disabled by default."
+        ),
+    )
+
+    parser.add_argument(
         "--max-prefill-streak",
         type=int,
         default=ServerArgs.max_prefill_streak,

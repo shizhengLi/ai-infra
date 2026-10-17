@@ -535,3 +535,22 @@ dummy-weight streaming smoke 和 `num_tokenizer=0` 的真实请求均通过。�
 作为高并发 CPU 候选。新增 1 ms 微批等待窗口后，1.5 req/s P90 TTFT 进一步下降 4.32%，
 但未达到 -5% gate；2.5 req/s 变化 +0.08%，因此等待参数默认保持 0 ms。详见
 `learning/experiments/067_batch_tokenization.md`。
+
+## 实验 068 阶段 1 结果
+
+实验 068 开始实现 page-aware admission 的 safe decode retraction。新增
+`--prefill-safe-retraction`（默认关闭，且必须与 `page-aware` 一起使用），按未来 KV page
+需求选择可回收的 decode 请求，并保护当前 GPU in-flight batch。回收不会重放原 prompt，而是
+保留当前 KV/table、暂时移出 decode reservation，等压力消失后原地恢复；`generation` 标记和
+stale result guard 用于防止延迟结果覆盖新 incarnation。
+
+新增生命周期和调度测试后，`tests/core` 通过 109/109。阶段 1 只证明 correctness 与默认路径
+兼容，尚未进行 L20 限页压力在线测试，也没有宣称 TTFT 或吞吐收益。详见
+`learning/experiments/068_safe_decode_retraction.md`。
+
+补充的 L20 限页在线实验使用 4096 KV tokens、256/1024/2048 混合 prompt 和 64 输出。暂停
+decode、保留 KV 的版本在 1.5/2.5 req/s 达到 66.78/71.63 tok/s，相对 control
+66.91/72.30 tok/s 为 -0.18%/-0.93%；P90 TTFT 为 1505/3852 ms，相对 control
+1235/3766 ms 没有改善。两组输出长度和 page integrity 均正确，但 retraction 次数达到
+143/706，暴露 reservation thrashing。因此实验 068 的 correctness gate 通过、性能 gate
+拒绝，safe retraction 保持默认关闭；下一步若继续应先做 hysteresis，而不是直接扩大在线流量。

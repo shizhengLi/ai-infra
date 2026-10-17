@@ -85,6 +85,9 @@ class Scheduler(SchedulerIOMixin):
             radix_partial_eviction_hotness_decay=config.radix_partial_eviction_hotness_decay,
         )
         self.decode_manager = DecodeManager(config.page_size)
+        if config.prefill_safe_retraction and config.prefill_reserve_policy != "page-aware":
+            raise ValueError("prefill_safe_retraction requires prefill_reserve_policy=page-aware")
+        self.prefill_safe_retraction = config.prefill_safe_retraction
         if config.prefill_reserve_policy == "token":
             reserve_estimator = None
         elif config.prefill_reserve_policy == "page-aware":
@@ -177,7 +180,10 @@ class Scheduler(SchedulerIOMixin):
         force_decode = self._should_prioritize_decode_before_prefill(last_data)
         if force_decode:
             self._decode_graph_tail_priority_consumed = True
-        forward_input = self._schedule_next_batch(force_decode=force_decode)
+        protected_reqs = set(last_data[0].batch.reqs) if last_data is not None else set()
+        forward_input = self._schedule_next_batch(
+            force_decode=force_decode, protected_reqs=protected_reqs
+        )
         ongoing_data = None
         if forward_input is not None:
             with self.engine_stream_ctx:  # run the batch in the engine's stream
@@ -226,7 +232,7 @@ class Scheduler(SchedulerIOMixin):
         for msg in self.receive_msg(blocking=blocking):
             self._process_one_msg(msg)
 
-        forward_input = self._schedule_next_batch()
+        forward_input = self._schedule_next_batch(protected_reqs=set())
         ongoing_data = None
         if forward_input is not None:
             ongoing_data = (forward_input, self._forward(forward_input))
@@ -276,6 +282,10 @@ class Scheduler(SchedulerIOMixin):
         with self.cache_manager.lazy_free_region():
             for i, req in enumerate(batch.reqs):
                 if isinstance(req, ChunkedReq):
+                    continue
+                # A retracted request is never part of a protected in-flight
+                # batch. Keep this guard as a final stale-result defense.
+                if req.retracted:
                     continue
                 next_token = next_tokens_cpu[i]
                 append_allocations = req.append_allocations
@@ -366,9 +376,17 @@ class Scheduler(SchedulerIOMixin):
             write_tuple=write_mapping,
         )
 
-    def _schedule_next_batch(self, *, force_decode: bool = False) -> ForwardInput | None:
+    def _schedule_next_batch(
+        self,
+        *,
+        force_decode: bool = False,
+        protected_reqs: Set[Req] | None = None,
+    ) -> ForwardInput | None:
         # TODO: support other policies: e.g. DECODE first
+        if not self.prefill_manager.runnable:
+            self.decode_manager.resume_paused()
         if force_decode:
+            self.decode_manager.resume_paused()
             batch = self.decode_manager.schedule_next_batch()
         elif self.schedule_policy.prefer_decode(
             prefill_runnable=self.prefill_manager.runnable,
@@ -392,10 +410,33 @@ class Scheduler(SchedulerIOMixin):
                     pending_tokens,
                     len(self.prefill_manager.pending_list),
                 )
-            batch = (
-                self.prefill_manager.schedule_next_batch(prefill_budget)
-                or self.decode_manager.schedule_next_batch()
-            )
+            batch = self.prefill_manager.schedule_next_batch(prefill_budget)
+            if (
+                batch is None
+                and not force_decode
+                and self.prefill_safe_retraction
+                and self.prefill_manager.runnable
+            ):
+                # Retry admission after evicting only decode requests that are
+                # not part of the currently submitted GPU batch. This keeps
+                # retraction CPU-only and prevents stale CUDA results.
+                for _ in range(len(self.decode_manager.running_reqs)):
+                    req = self.decode_manager.pause_candidate(protected_reqs)
+                    if req is None:
+                        break
+                    self.prefill_telemetry.record_retraction(req.remain_len)
+                    self._record_pipeline_event(
+                        "decode_retracted",
+                        uid=req.uid,
+                        generation=req.generation,
+                        remaining_tokens=req.remain_len,
+                    )
+                    batch = self.prefill_manager.schedule_next_batch(prefill_budget)
+                    if batch is not None:
+                        break
+            if batch is None:
+                self.decode_manager.resume_paused()
+                batch = self.decode_manager.schedule_next_batch()
             if self.prefill_telemetry_enabled and batch is not None and batch.is_prefill:
                 admitted_tokens = sum(req.extend_len for req in batch.reqs)
                 budget_limited = admitted_tokens >= prefill_budget and self.prefill_manager.runnable
