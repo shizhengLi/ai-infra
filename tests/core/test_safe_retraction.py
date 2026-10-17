@@ -52,3 +52,24 @@ def test_paused_request_keeps_one_page_reservation() -> None:
     assert manager.pause_candidate() is req
     assert manager.inflight_tokens == 16
     assert manager.inflight_tokens < full_reservation
+
+
+def test_resumed_request_obeys_retraction_cooldown() -> None:
+    req = make_req(4)
+    manager = DecodeManager(page_size=16, retraction_cooldown_steps=2, running_reqs={req})
+    assert manager.pause_candidate() is req
+    manager.resume_paused()
+    assert manager.retract_candidate() is None
+    manager.advance_retraction_cooldown()
+    assert manager.retract_candidate() is None
+    manager.advance_retraction_cooldown()
+    assert manager.retract_candidate() is req
+
+
+def test_abort_clears_retraction_cooldown() -> None:
+    req = make_req(4)
+    manager = DecodeManager(page_size=16, retraction_cooldown_steps=2, running_reqs={req})
+    manager._retraction_cooldowns[req] = 2
+
+    assert manager.abort_req(req.uid) is req
+    assert req not in manager._retraction_cooldowns

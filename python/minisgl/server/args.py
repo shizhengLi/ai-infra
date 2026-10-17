@@ -316,6 +316,26 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--prefill-retraction-cooldown-steps",
+        type=int,
+        default=ServerArgs.prefill_retraction_cooldown_steps,
+        help=(
+            "Scheduler calls a resumed decode request must wait before it can be paused again. "
+            "Zero disables hysteresis."
+        ),
+    )
+
+    parser.add_argument(
+        "--prefill-retraction-min-pending-tokens",
+        type=int,
+        default=ServerArgs.prefill_retraction_min_pending_tokens,
+        help=(
+            "Minimum pending prefill tokens required before safe retraction is attempted. "
+            "Zero disables the pressure gate."
+        ),
+    )
+
+    parser.add_argument(
         "--max-prefill-streak",
         type=int,
         default=ServerArgs.max_prefill_streak,

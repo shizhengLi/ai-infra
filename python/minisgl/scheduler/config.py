@@ -17,6 +17,8 @@ class SchedulerConfig(EngineConfig):
     prefill_reserve_policy: str = "token"
     prefill_new_token_ratio: float = 1.0
     prefill_safe_retraction: bool = False
+    prefill_retraction_cooldown_steps: int = 0
+    prefill_retraction_min_pending_tokens: int = 0
     decode_active_prefill_tokens: int = 0
     decode_overload_prefill_tokens: int = 0
     decode_overload_prefill_threshold: int = 0

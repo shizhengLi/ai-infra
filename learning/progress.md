@@ -554,3 +554,17 @@ decode、保留 KV 的版本在 1.5/2.5 req/s 达到 66.78/71.63 tok/s，相对 
 1235/3766 ms 没有改善。两组输出长度和 page integrity 均正确，但 retraction 次数达到
 143/706，暴露 reservation thrashing。因此实验 068 的 correctness gate 通过、性能 gate
 拒绝，safe retraction 保持默认关闭；下一步若继续应先做 hysteresis，而不是直接扩大在线流量。
+
+## 实验 069 结果
+
+实验 069 为实验 068 的 safe decode retraction 增加了两个默认关闭的滞回控制：恢复后的
+decode 请求在 `--prefill-retraction-cooldown-steps` 个 scheduler 周期内不能再次被暂停，
+并且只有 pending prefill token 达到 `--prefill-retraction-min-pending-tokens` 才允许触发
+retraction。新增生命周期、CLI 和负值校验，`tests/core` 全量 112/112 通过。
+
+L20 Qwen3-32B FP8 W8A8 TP4、4096 pages、输入 256/1024/2048、输出 64 的单次 Poisson 矩阵中，
+cooldown=4、pending gate=2048 将 retraction 从 849 次降到 144 次（-83.0%），涉及 token
+从 24204 降到 3972（-83.6%）。1.5 req/s 吞吐为 66.95 tok/s（control 66.91），2.5 req/s
+吞吐为 73.23 tok/s（control 72.30），P90 TTFT 在高负载从 3766.34 ms 降到 3678.23 ms。
+该结果支持条件性保留，但由于每个负载只有一次重复，仍保持 opt-in，不修改全局默认。
+详细记录见 `learning/experiments/069_retraction_hysteresis.md`。

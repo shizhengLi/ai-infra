@@ -84,7 +84,15 @@ class Scheduler(SchedulerIOMixin):
             ),
             radix_partial_eviction_hotness_decay=config.radix_partial_eviction_hotness_decay,
         )
-        self.decode_manager = DecodeManager(config.page_size)
+        if config.prefill_retraction_cooldown_steps < 0:
+            raise ValueError("prefill_retraction_cooldown_steps must be non-negative")
+        if config.prefill_retraction_min_pending_tokens < 0:
+            raise ValueError("prefill_retraction_min_pending_tokens must be non-negative")
+        self.prefill_retraction_min_pending_tokens = config.prefill_retraction_min_pending_tokens
+        self.decode_manager = DecodeManager(
+            config.page_size,
+            retraction_cooldown_steps=config.prefill_retraction_cooldown_steps,
+        )
         if config.prefill_safe_retraction and config.prefill_reserve_policy != "page-aware":
             raise ValueError("prefill_safe_retraction requires prefill_reserve_policy=page-aware")
         self.prefill_safe_retraction = config.prefill_safe_retraction
@@ -383,6 +391,7 @@ class Scheduler(SchedulerIOMixin):
         protected_reqs: Set[Req] | None = None,
     ) -> ForwardInput | None:
         # TODO: support other policies: e.g. DECODE first
+        self.decode_manager.advance_retraction_cooldown()
         if not self.prefill_manager.runnable:
             self.decode_manager.resume_paused()
         if force_decode:
@@ -397,7 +406,9 @@ class Scheduler(SchedulerIOMixin):
             active_decode_requests = len(self.decode_manager.running_reqs)
             pending_requests = len(self.prefill_manager.pending_list)
             pending_tokens = (
-                self.prefill_manager.pending_input_tokens if self.prefill_pressure_enabled else 0
+                self.prefill_manager.pending_input_tokens
+                if self.prefill_pressure_enabled or self.prefill_safe_retraction
+                else 0
             )
             prefill_budget = self.prefill_budget_policy.select(
                 decode_runnable=self.decode_manager.runnable,
@@ -416,6 +427,10 @@ class Scheduler(SchedulerIOMixin):
                 and not force_decode
                 and self.prefill_safe_retraction
                 and self.prefill_manager.runnable
+                and (
+                    self.prefill_retraction_min_pending_tokens == 0
+                    or pending_tokens >= self.prefill_retraction_min_pending_tokens
+                )
             ):
                 # Retry admission after evicting only decode requests that are
                 # not part of the currently submitted GPU batch. This keeps

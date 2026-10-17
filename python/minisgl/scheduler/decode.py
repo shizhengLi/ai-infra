@@ -11,14 +11,28 @@ from minisgl.core import Batch, Req
 @dataclass
 class DecodeManager:
     page_size: int
+    retraction_cooldown_steps: int = 0
     running_reqs: Set[Req] = field(default_factory=set)
     paused_reqs: list[Req] = field(default_factory=list)
+    _retraction_cooldowns: dict[Req, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.retraction_cooldown_steps < 0:
+            raise ValueError("retraction_cooldown_steps must be non-negative")
+
+    def advance_retraction_cooldown(self) -> None:
+        self._retraction_cooldowns = {
+            req: steps - 1
+            for req, steps in self._retraction_cooldowns.items()
+            if steps > 1
+        }
 
     def filter_reqs(self, reqs: Iterable[Req]) -> None:
         self.running_reqs = {req for req in self.running_reqs.union(reqs) if req.can_decode}
 
     def remove_req(self, req: Req) -> None:
         self.running_reqs.discard(req)
+        self._retraction_cooldowns.pop(req, None)
         try:
             self.paused_reqs.remove(req)
         except ValueError:
@@ -28,9 +42,11 @@ class DecodeManager:
         for req in self.running_reqs:
             if req.uid == uid:
                 self.running_reqs.remove(req)
+                self._retraction_cooldowns.pop(req, None)
                 return req
         for index, req in enumerate(self.paused_reqs):
             if req.uid == uid:
+                self._retraction_cooldowns.pop(req, None)
                 return self.paused_reqs.pop(index)
         return None
 
@@ -45,7 +61,11 @@ class DecodeManager:
         candidates = [
             req
             for req in self.running_reqs
-            if req not in protected_reqs and req.can_decode
+            if (
+                req not in protected_reqs
+                and req.can_decode
+                and self._retraction_cooldowns.get(req, 0) == 0
+            )
         ]
         if not candidates:
             return None
@@ -67,6 +87,8 @@ class DecodeManager:
         for req in self.paused_reqs:
             if req.can_decode:
                 req.mark_resumed()
+                if self.retraction_cooldown_steps > 0:
+                    self._retraction_cooldowns[req] = self.retraction_cooldown_steps
                 self.running_reqs.add(req)
         self.paused_reqs.clear()
 

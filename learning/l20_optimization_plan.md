@@ -398,4 +398,13 @@ changed -4.32%/+0.08% at 1.5/2.5 req/s versus the batch=1 control, while through
 +0.07%/-0.03%; the -5% gate still failed. Both profiles retained 100% SLO attainment, and
 num_tokenizer=2/4 streaming smoke passed. Keep batch=32 as a high-concurrency CPU candidate and
 keep the wait default at 0 ms; do not claim a low-rate TTFT win. See
-`learning/experiments/067_batch_tokenization.md`.
+`learning/experiments/067_batch_tokenization.md`。
+
+## Experiment 069 result
+
+实验 069 完成了 safe decode retraction 的 hysteresis 版本。冷却窗口和 pending-token 压力门槛
+将一次 L20 在线压力矩阵中的 retraction 次数减少 83.0%，retracted token 减少 83.6%，吞吐
+不降，2.5 req/s 的 P90 TTFT 相比实验 068 control 改善 2.34%。该结果有调度振荡治理和资源
+状态机设计的面试价值，但只有单次重复，不能证明跨 workload 稳定收益。因此将其标记为
+**条件性接受、默认关闭**；后续若继续，应做至少三次重复和不同 output length/page size 的
+敏感性验证，而不是直接扩大默认流量。

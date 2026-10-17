@@ -99,3 +99,22 @@ def test_cli_enables_safe_retraction_explicitly() -> None:
         ]
     )
     assert args.prefill_safe_retraction is True
+
+
+def test_cli_parses_retraction_hysteresis() -> None:
+    from minisgl.server.args import parse_args
+
+    args, _ = parse_args(
+        [
+            "--model",
+            "unused",
+            "--dtype",
+            "bfloat16",
+            "--prefill-retraction-cooldown-steps",
+            "4",
+            "--prefill-retraction-min-pending-tokens",
+            "2048",
+        ]
+    )
+    assert args.prefill_retraction_cooldown_steps == 4
+    assert args.prefill_retraction_min_pending_tokens == 2048
