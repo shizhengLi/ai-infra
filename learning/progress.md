@@ -461,8 +461,8 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 暂时超出当前 dense Qwen3-32B 主线或实现风险过高。
 
 下一阶段改为 upstream-derived PR 路线：先做 059 page-aware admission/retraction，再做 060
-预分配 request token buffer；随后评估 061/062 FP8 KV、063 fused cast/store、064 page size >1、
-065 Graph shape policy 和 066 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性
+预分配 request token buffer；随后评估 061/062 FP8 KV、063 fused cast/store、064 native pair
+conversion、065 FlashInfer page size >1、066 Graph shape policy 和 067 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性
 gate、显存和 TTFT/TPOT
 指标，具体设计见 `learning/upstream_pr_opportunities.md`。
 
@@ -488,3 +488,17 @@ token 的 `torch.cat`。`tests/core` 通过 91/91，新增用例验证 token 内
 吞吐 209.65 vs 210.10 token/s（-0.21%），TTFT/TPOT 无实质改善。Telemetry 同时确认
 allocation 3088 -> 0、copied tokens 6,319,880 -> 3,088。接受为 allocator/copy pressure
 优化基础设施，拒绝宣称 CPU wall-time -50% 或端到端性能提升。
+
+## 实验 065 结果
+
+实验 065 第一阶段移除了 FlashInfer 仅支持 `page_size=1` 的限制，改用 page 级
+`paged_kv_indptr`、page id 和 `last_page_len`，同时保留 token 级 query lengths。核心测试
+102/102 通过；合成 prefill、Qwen3-0.6B BF16/FP8 服务和 page size 32 的最小 CUDA Graph
+capture/replay smoke 均通过。
+
+L20 四卡 Qwen3-32B FP8 TP4、4096 输入、并发 1 的两次重复结果为：page 1 吞吐 12.3405
+tok/s、P90 TPOT 52.98 ms；page 16 吞吐 11.0389 tok/s、P90 TPOT 64.07 ms；page 32 吞吐
+12.6121 tok/s、P90 TPOT 51.29 ms。相对 page 1，page 32 在这个画像上吞吐 +2.20%、P90
+TPOT -3.20%，page 16 吞吐 -10.53%、P90 TPOT +20.94%。page 32 只进入候选，不足以改默认；
+page 16 暂拒。下一步需要补齐并发、长上下文、eviction 和真实 Graph shape 矩阵，详见
+`learning/experiments/065_flashinfer_page_size_gt1.md`。

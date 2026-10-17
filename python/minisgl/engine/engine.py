@@ -296,6 +296,8 @@ def _adjust_config(config: EngineConfig):
         raise ValueError(f"--kv-cache-scale must be positive, got {config.kv_cache_scale}")
     if config.kv_cache_native_pair and not config.kv_cache_fused_store:
         raise ValueError("--kv-cache-native-pair requires --kv-cache-fused-store")
+    if config.page_size <= 0:
+        raise ValueError(f"--page-size must be positive, got {config.page_size}")
     if config.kv_cache_calibration not in {"fixed", "first_batch"}:
         raise ValueError(f"Unsupported KV cache calibration: {config.kv_cache_calibration}")
     if config.kv_cache_dtype == "float8_e4m3fn":
@@ -303,8 +305,6 @@ def _adjust_config(config: EngineConfig):
             raise ValueError(
                 "FP8 KV cache currently requires the FlashInfer attention backend (--attn fi)"
             )
-        if config.page_size != 1:
-            raise ValueError("FP8 KV cache currently requires --page-size 1")
     elif config.kv_cache_calibration != "fixed":
         raise ValueError("KV cache calibration is only supported for FP8 KV cache")
 

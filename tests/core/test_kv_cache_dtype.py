@@ -4,6 +4,7 @@ import torch
 from minisgl.distributed import DistributedInfo, set_tp_info
 from minisgl.engine.config import EngineConfig
 from minisgl.engine.engine import _resolve_kv_cache_dtype
+from minisgl.attention.fi import _paged_lengths
 from minisgl.kvcache.mha_pool import FP8_KV_DTYPE, MHAKVCache, calibrate_fp8_kv_scale
 from minisgl.server.args import parse_args
 
@@ -48,6 +49,12 @@ def test_kv_cache_native_pair_cli() -> None:
         ["--model", "unused", "--dtype", "bfloat16", "--kv-cache-native-pair"]
     )
     assert args.kv_cache_native_pair is True
+
+
+def test_flashinfer_paged_lengths() -> None:
+    counts, last = _paged_lengths([1, 16, 17, 32, 33], page_size=16)
+    assert counts == [1, 1, 2, 2, 3]
+    assert last == [1, 16, 1, 16, 1]
 
 
 def test_kv_cache_first_batch_calibration_is_finite() -> None:
