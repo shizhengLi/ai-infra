@@ -278,7 +278,16 @@ class Scheduler(SchedulerIOMixin):
                 if isinstance(req, ChunkedReq):
                     continue
                 next_token = next_tokens_cpu[i]
+                append_allocations = req.append_allocations
+                append_copied_tokens = req.append_copied_tokens
+                append_start_ns = perf_counter_ns()
                 req.append_host(next_token.unsqueeze(0))
+                if self.prefill_telemetry_enabled:
+                    self.prefill_telemetry.record_host_append(
+                        elapsed_ns=perf_counter_ns() - append_start_ns,
+                        allocations=req.append_allocations - append_allocations,
+                        copied_tokens=req.append_copied_tokens - append_copied_tokens,
+                    )
                 next_token = int(next_token.item())
                 finished = not req.can_decode
                 if not req.sampling_params.ignore_eos:

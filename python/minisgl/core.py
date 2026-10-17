@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import os
 from typing import TYPE_CHECKING, List, Literal
 
 import torch
+
+
+_REQ_APPEND_MODE = os.getenv("MINISGL_REQ_APPEND_MODE", "preallocated")
+if _REQ_APPEND_MODE not in {"preallocated", "cat"}:
+    raise ValueError("MINISGL_REQ_APPEND_MODE must be 'preallocated' or 'cat'")
 
 if TYPE_CHECKING:
     from minisgl.attention import BaseAttnBackend, BaseAttnMetadata
@@ -40,6 +46,12 @@ class Req:
         self.device_len = len(self.input_ids)
         self.max_device_len = self.device_len + self.output_len
         assert 0 <= self.cached_len < self.device_len <= self.max_device_len
+        self.append_count = 0
+        self.append_allocations = 0
+        self.append_copied_tokens = 0
+        self._append_mode = _REQ_APPEND_MODE
+        if self._append_mode == "cat":
+            return
         # Keep the public tensor as a view of valid tokens while retaining one
         # stable CPU allocation for the complete request lifetime.  Decode
         # appends then write one element instead of reallocating the prefix.
@@ -70,8 +82,16 @@ class Req:
             raise ValueError("append_host expects exactly one token")
         if self.device_len <= 0 or self.device_len > self.max_device_len:
             raise RuntimeError("request host buffer is out of bounds")
+        self.append_count += 1
+        if self._append_mode == "cat":
+            old_len = len(self.input_ids)
+            self.input_ids = torch.cat([self.input_ids, next_token])
+            self.append_allocations += 1
+            self.append_copied_tokens += old_len + 1
+            return
         self._input_buffer[self.device_len - 1] = next_token.item()
         self.input_ids = self._input_buffer[: self.device_len]
+        self.append_copied_tokens += 1
 
     @property
     def can_decode(self) -> bool:

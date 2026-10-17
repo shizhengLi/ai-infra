@@ -1,7 +1,7 @@
 # 实验 060：预分配 Req token buffer
 
 日期：2026-10-17  
-状态：实现和离线正确性完成；CPU wall-time/L20 长输出验证待做
+状态：实现、离线正确性和 L20 长输出 A/B 完成；未达到 CPU wall-time -50% gate
 
 ## 动机
 
@@ -23,11 +23,12 @@ scheduler 处理采样结果的路径中，理论复制复杂度接近 O(output_
 
 ```text
 .venv/bin/pytest -o addopts='' -q tests/core
-91 passed in 5.05s
+92 passed (latest run)
 ```
 
 新增 `tests/core/test_req_buffer.py` 覆盖：有效长度 view、容量大小、连续 append、最大
-capacity、底层指针稳定、单 token 边界。`compileall` 和 `git diff --check` 通过。
+capacity、底层指针稳定、单 token 边界和 legacy `cat` 回归模式。`compileall` 和
+`git diff --check` 通过。
 
 ## 复杂度微基准
 
@@ -50,11 +51,35 @@ capacity、底层指针稳定、单 token 边界。`compileall` 和 `git diff --
 实现对这种小的一维 tensor 操作很快；这不是端到端 scheduler CPU 结论。实验 060 的
 `append CPU time -50%` gate 尚未通过，不能仅凭复杂度数字宣称性能优化成功。
 
+## L20 长输出 A/B
+
+为区分复杂度收益和真实服务收益，增加了实验开关 `MINISGL_REQ_APPEND_MODE`：默认值为
+`preallocated`，设置为 `cat` 时恢复旧实现，仅用于 A/B 回归。两组使用空闲 GPU 2/3/6/7，
+Qwen3-32B FP8 TP4、FlashInfer、CUDA Graph max batch 32、相同 prefill/decode 参数和
+`CUDA_HOME=/usr/local/cuda-12.8`。workload 为 256/1024/4096 混合输入、512 输出 token、
+1.5 req/s、6 请求、seed `6000042`，每组 1 次；开启 prefill telemetry。
+
+| 指标 | preallocated | legacy cat | 变化 |
+| --- | ---: | ---: | ---: |
+| 输出吞吐 token/s | 209.65 | 210.10 | -0.21% |
+| 平均 TTFT ms | 1473.00 | 1455.77 | +1.18% |
+| P90 TTFT ms | 2494.32 | 2468.68 | +1.04% |
+| 平均 TPOT ms | 21.844 | 21.836 | +0.03% |
+| host append calls | 3088 | 3088 | 0% |
+| host append time | 60.71 ms | 62.22 ms | -2.43% |
+| host append allocations | 0 | 3088 | -100% |
+| host copied tokens | 3088 | 6,319,880 | -99.95% |
+| max pending prefill tokens | 8221 | 8221 | 0% |
+
+两组均为 6/6 请求成功，TTFT SLO 为 50%，TPOT SLO 为 100%，峰值显存均为 16413 MiB/card。
+结果文件为 `learning/results/060_preallocated_poisson.*` 和
+`learning/results/060_cat_poisson.*`。端到端吞吐和 TTFT 没有改善，说明当前 L20 workload
+的主要瓶颈不是 host append；但 telemetry 验证了预分配消除了每 token allocation 和
+O(n) token copy。实验 060 的 CPU wall-time `-50%` gate **未通过**，保留该改动作为降低
+allocator pressure 的基础设施，不改变其它 scheduler 默认策略。
+
 ## 下一步
 
-1. 在真实 scheduler 中加入 append 分配/复制 telemetry，测 Qwen3-32B FP8 TP4 长输出下的
-   scheduler CPU 时间，而不是只测孤立 Python 循环。
-2. 运行 256/1024/4096 prompt、512/2048 output 的 L20 对照，检查 token 完全一致、TTFT、
-   TPOT 和吞吐。
-3. 若 scheduler CPU 仍无收益，评估批量化 host token 写入或减少 Python 调度边界；保留本次
-   稳定 buffer 作为低风险基础改动。
+1. 若要继续优化 CPU path，评估批量化 host token 写入或减少 Python 调度边界；单纯替换
+   allocator 已经证明不会改变当前 GPU-bound workload 的主要指标。
+2. 把 legacy `cat` 模式保留为回归工具，不作为部署选项文档推荐。

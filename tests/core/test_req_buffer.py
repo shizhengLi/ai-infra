@@ -22,6 +22,7 @@ def test_req_preallocates_capacity_but_exposes_valid_length() -> None:
     assert req.max_device_len == 7
     assert req.input_ids.tolist() == [0, 1, 2]
     assert req._input_buffer.numel() == 7
+    assert req.append_allocations == 0
 
 
 def test_req_append_writes_in_place_after_complete_one() -> None:
@@ -34,12 +35,15 @@ def test_req_append_writes_in_place_after_complete_one() -> None:
     assert len(req.input_ids) == 4
     assert req.input_ids.tolist() == [0, 1, 2, 10]
     assert req._input_buffer.data_ptr() == buffer_ptr
+    assert req.append_allocations == 0
+    assert req.append_copied_tokens == 1
 
     req.complete_one()
     req.append_host(torch.tensor([11], dtype=torch.int32))
     assert req.device_len == 5
     assert req.input_ids.tolist() == [0, 1, 2, 10, 11]
     assert req._input_buffer.data_ptr() == buffer_ptr
+    assert req.append_copied_tokens == 2
 
 
 def test_req_can_append_until_capacity() -> None:
@@ -51,9 +55,20 @@ def test_req_can_append_until_capacity() -> None:
     assert req.input_ids.tolist() == [0, 1, 7, 8]
 
 
+def test_req_cat_mode_is_available_for_regression(monkeypatch: pytest.MonkeyPatch) -> None:
+    import minisgl.core as core
+
+    monkeypatch.setattr(core, "_REQ_APPEND_MODE", "cat")
+    req = make_req()
+    req.complete_one()
+    req.append_host(torch.tensor([10], dtype=torch.int32))
+    assert req.input_ids.tolist() == [0, 1, 2, 10]
+    assert req.append_allocations == 1
+    assert req.append_copied_tokens == 4
+
+
 def test_req_rejects_multiple_tokens() -> None:
     req = make_req()
     req.complete_one()
     with pytest.raises(ValueError, match="exactly one token"):
         req.append_host(torch.tensor([8, 9], dtype=torch.int32))
-

@@ -82,6 +82,10 @@ class PrefillTelemetry:
     budget_limited_batches: int = 0
     max_pending_prefill_tokens: int = 0
     max_pending_prefill_requests: int = 0
+    host_append_calls: int = 0
+    host_append_ns: int = 0
+    host_append_allocations: int = 0
+    host_append_copied_tokens: int = 0
     batch_execution_samples: list[dict[str, int | float | bool]] = field(default_factory=list)
 
     def record_selection(self, budget: int, pending_tokens: int, pending_requests: int) -> None:
@@ -96,6 +100,14 @@ class PrefillTelemetry:
 
     def record_execution(self, **sample: int | float | bool) -> None:
         self.batch_execution_samples.append(sample)
+
+    def record_host_append(
+        self, *, elapsed_ns: int, allocations: int, copied_tokens: int
+    ) -> None:
+        self.host_append_calls += 1
+        self.host_append_ns += elapsed_ns
+        self.host_append_allocations += allocations
+        self.host_append_copied_tokens += copied_tokens
 
     def drain_execution_samples(self) -> None:
         self.batch_execution_samples.clear()
@@ -112,5 +124,9 @@ class PrefillTelemetry:
             "budget_limited_batches": self.budget_limited_batches,
             "max_pending_prefill_tokens": self.max_pending_prefill_tokens,
             "max_pending_prefill_requests": self.max_pending_prefill_requests,
+            "host_append_calls": self.host_append_calls,
+            "host_append_ns": self.host_append_ns,
+            "host_append_allocations": self.host_append_allocations,
+            "host_append_copied_tokens": self.host_append_copied_tokens,
             "batch_execution_samples": list(self.batch_execution_samples),
         }

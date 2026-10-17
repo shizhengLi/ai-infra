@@ -415,11 +415,13 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 主实验 gate 通过；详见
 `learning/experiments/059_page_aware_admission.md`。
 
-## Experiment 060 result (offline stage)
+## Experiment 060 result
 
 实验 060 将 `Req.append_host()` 改为预分配 `_input_buffer` 加有效长度 view，避免每个输出
 token 的 `torch.cat`。`tests/core` 通过 91/91，新增用例验证 token 内容、最大容量和底层
-指针稳定。32768 输出 token 的理论复制量从约 2.15 GB 降至 128 KiB，分配次数从 32768
-降至 1；但孤立 Python 微基准 wall-time 为 0.36 s，对比旧 `torch.cat` 的 0.19 s，因此
-CPU wall-time gate 尚未通过。下一步必须用真实 Qwen3-32B L20 scheduler telemetry 判断
-是否转化为端到端收益，不能只凭 O(n) 分析接受默认启用。
+指针稳定。32768 输出 token 的理论复制量从约 2.28 GB 降至 132 KiB，分配次数从 32768
+降至 1；但孤立 Python 微基准 wall-time 为 0.38 s，对比旧 `torch.cat` 的 0.19 s。随后
+真实 Qwen3-32B FP8 TP4 L20 A/B 显示 host append time 60.71 ms vs 62.22 ms（-2.43%），
+吞吐 209.65 vs 210.10 token/s（-0.21%），TTFT/TPOT 无实质改善。Telemetry 同时确认
+allocation 3088 -> 0、copied tokens 6,319,880 -> 3,088。接受为 allocator/copy pressure
+优化基础设施，拒绝宣称 CPU wall-time -50% 或端到端性能提升。
