@@ -1,7 +1,7 @@
 # 实验 059：Page-aware admission 第一阶段
 
 日期：2026-10-14  
-状态：阶段 1 完成；阶段 2（decode retraction + L20 压测）待做
+状态：阶段 1 和短在线验证完成；decode retraction 和完整 L20 压测待做
 
 ## 背景与假设
 
@@ -65,6 +65,37 @@ KV 需求，但底层 `CacheManager.allocate_paged()` 实际按 `page_size` 分�
 阶段 1 接口和容量数学模型通过离线验证，默认路径零行为变化。由于 L20 上 GPU 0--7 当前
 均有外部任务占用，本轮没有启动服务、没有抢占或终止外部进程，也没有伪造 TTFT/吞吐结果。
 因此不能宣称实验 059 的 P90 TTFT -15%、pending peak -20% 目标已经达成。
+
+## L20 短在线验证
+
+随后 GPU 2/3/6/7 空闲，使用这四张卡进行了同一服务配置的 A/B 对照。GPU 0/1/4/5 的外部
+任务保持不变。服务启动时显式设置 `CUDA_HOME=/usr/local/cuda-12.8` 和对应 `PATH`，因为
+系统 `/usr/bin/nvcc` 是 CUDA 11.5，不能编译 PyNCCL 所需的 C++20；这只改变本次进程环境，
+没有修改系统 CUDA 链接。
+
+固定配置：Qwen3-32B、FP8 W8A8、BF16 runtime、TP4、FlashInfer、CUDA Graph max batch 32、
+16384 KV tokens、`max_prefill_length=4096`、`max_prefill_streak=1`、decode-active prefill
+1024、GPU 2/3/6/7。请求为 256/1024/4096 三种输入长度均衡混合，64 输出 token，1.5
+req/s，8 请求，2 次重复，seed `5900042`。两组均为 16/16 请求完成，TTFT 和 TPOT SLO
+达成率均为 100%。
+
+| policy | throughput tok/s | avg TTFT ms | P90 TTFT ms | avg TPOT ms | peak MiB/card |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| token | 74.10 +/- 8.48 | 697.40 | 1394.32 | 28.77 | 16413 |
+| page-aware | 73.77 +/- 8.31 | 711.54 | 1422.28 | 28.80 | 16413 |
+| page-aware vs token | -0.45% | +2.03% | +2.01% | +0.11% | 0 |
+
+结果文件：
+
+- `learning/results/059_token_poisson.json` / `.md`
+- `learning/results/059_page_aware_poisson.json` / `.md`
+
+本次服务的 `page_size` 仍为 1，因为当前 FlashInfer attention 路径还限制 page size >1。
+在 `page_size=1` 且 `new_token_ratio=1.0` 时，page-aware 估算退化为旧的
+`extend_len + output_len`，所以短在线 A/B 的预期是等价而非加速。观测到的 -0.45% 吞吐和
++2.01% P90 TTFT 在两次重复和短 trace 的噪声范围内，结论是 **无回归、未证明性能收益**。
+真正能体现 page-aware admission 差异的实验需要先完成 FlashInfer page size >1，或接入
+decode 实际输出比例和 retraction；不能把本次结果包装成主性能 PR 已通过。
 
 ## 下一步
 

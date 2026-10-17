@@ -408,6 +408,9 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 实验 059 第一阶段把 prefill reserve 抽成可选的 `PageAwareReserveEstimator`，按真实
 `page_size` 对新增输入和预测输出向上取整，并接入 `PrefillAdder` 的容量检查与 reservation
 累计。默认 `token` 策略保持不变；page-aware 通过 CLI 显式 opt-in。新增策略测试和全量
-`tests/core` 分别以 33/33 和 87/87 通过。decode retraction、真实输出反馈接入和 L20 性能
-矩阵尚未完成，不能提前宣称主实验 gate 通过；详见
+`tests/core` 分别以 33/33 和 87/87 通过。随后在空闲 L20 GPU 2/3/6/7 上完成了 1.5 req/s
+短在线 A/B：page-aware 吞吐 73.77 vs token 74.10 tok/s，P90 TTFT 1422.28 vs 1394.32 ms，
+两组 16/16 请求成功且 SLO 100%。由于当前 `page_size=1`，该结果验证了无回归但没有证明
+性能收益。decode retraction、真实输出反馈接入和完整 L20 性能矩阵仍未完成，不能提前宣称
+主实验 gate 通过；详见
 `learning/experiments/059_page_aware_admission.md`。
