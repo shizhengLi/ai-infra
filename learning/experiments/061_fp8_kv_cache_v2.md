@@ -1,7 +1,7 @@
 # 实验 061：L20 FP8 KV Cache v2（第一、二阶段）
 
 日期：2026-10-17  
-状态：第一阶段完成；第二阶段完成校准机制和真实服务 smoke，融合写入和质量/长上下文性能 gate 尚未完成
+状态：第一阶段完成；第二阶段完成首批校准、真实服务 smoke 和可审计 telemetry，融合写入和质量/长上下文性能 gate 尚未完成
 
 ## 背景和目标
 
@@ -40,7 +40,7 @@ dummy graph 激活污染统计。
 CUDA_HOME=/usr/local/cuda-12.8 \
 PATH=/usr/local/cuda-12.8/bin:$PATH \
 .venv/bin/pytest -q tests/core
-98 passed
+99 passed
 ```
 
 额外 smoke 使用 L20（SM89）GPU 2：
@@ -50,7 +50,7 @@ PATH=/usr/local/cuda-12.8/bin:$PATH \
 - FlashInfer `BatchDecodeWithPagedKVCacheWrapper` 以
   `q_data_type=BF16`、`kv_data_type=float8_e4m3fn` 成功 plan/run，输出为 BF16 且
   `torch.isfinite(output).all() == True`。
-- 新增 CLI、dtype、scale、cache allocation 和首批校准测试；核心测试合计 98 个通过。
+- 新增 CLI、dtype、scale、cache allocation、首批校准和 summary 测试；核心测试合计 99 个通过。
 - 独立 CUDA smoke 使用首批幅度 4.0，得到 `scale=0.0093984962`，第二批幅度 100.0
   不会改变已固定的 layer scale。
 
@@ -116,10 +116,43 @@ kernel 时间。参数为 L20 SM89、GQA 32/8、head_dim=128、`activation_std=0
 上比 BF16 慢约 46%，到 16k context 差距缩小到约 9%。这说明 FP8 KV 的主要确定性收益
 仍是容量，不应直接宣传为 ITL 加速；真实模型质量和端到端 ITL 仍需单独 gate。
 
+## 061d：真实模型校准 telemetry
+
+为了避免只凭服务 HTTP 200 判断校准是否有效，新增可选参数
+`--kv-cache-calibration-summary /path/kv.json`。每个 TP rank 在 scheduler 优雅退出时写出
+独立的 `kv.rank{rank}.json`，记录每层 scale、是否完成校准、写入元素数和饱和元素数。
+该参数默认关闭；未指定时不执行饱和统计，避免普通服务路径增加同步和 `.item()` 开销。
+
+在 L20 GPU 2/3/6/7 上对已有 Qwen3-32B FP8 W8A8 checkpoint 做了一次真实请求采集，配置为：
+
+```text
+--attention-backend fi --quantization fp8 \
+--kv-cache-dtype float8_e4m3fn --kv-cache-scale 0.25 \
+--kv-cache-calibration first_batch \
+--kv-cache-calibration-summary /tmp/exp061d_kv_summary.zXmLiD/kv.json \
+--cuda-graph-max-bs 0
+```
+
+服务返回 HTTP 200，4 个 rank 均生成 summary；每 rank 64 层全部完成首批校准。汇总结果如下：
+
+| 指标 | 结果 |
+| --- | ---: |
+| TP ranks / layers | 4 / 256 |
+| scale 最小值 / 最大值 | 0.01681 / 0.26668 |
+| scale 中位数 | 0.05228 |
+| 累计写入元素 | 6,422,528 |
+| 累计饱和元素 | 145 |
+| 加权饱和率 | 0.00226% |
+
+各 rank 的饱和率分别为 0.00336%、0.00212%、0.00187% 和 0.00168%。这说明
+`max(abs(K), abs(V)) / (448*0.95)` 的首批逐层校准在这次真实短请求中没有明显极值截断；但
+该采集只覆盖一次短 prefill，不能替代 4096/8192/16384 长上下文、held-out perplexity 或
+端到端 TTFT/ITL gate。summary 也只统计写入前的饱和候选，不能证明量化误差已经可接受。
+
 ## 下一步
 
-1. 增加 rank-0 calibration summary（每层 scale、饱和率、有效 token 数），并在真实
-   Qwen3 激活上复现实验 061c 的误差结论。
+1. 在真实 Qwen3 激活上增加 BF16 KV vs FP8 KV 的 held-out quality/error gate，并覆盖
+   4096/8192/16384 上下文，避免把一次短请求 telemetry 当成部署结论。
 2. 将 BF16-to-FP8 cast 与 page store 合并为 CUDA kernel，测量写入开销和 prefill TTFT。
-3. 在 4096/8192/16384 上下文、短输出和长输出 workload 中做 BF16 KV vs FP8 KV 的
+3. 在短输出和长输出 workload 中做 BF16 KV vs FP8 KV 的
    ITL、TTFT、吞吐和质量对照；若 quality gate 通过，再进入默认策略评审。

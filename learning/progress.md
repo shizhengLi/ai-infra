@@ -38,7 +38,7 @@
 同时修复了 page accounting 原先固定使用模型 BF16 itemsize 的问题，否则 FP8 只会省显存
 而不会增加可用 KV tokens。
 
-核心测试为 97/97；L20 GPU 2 的实际 CUDA smoke 验证 FP8 写入和 FlashInfer decode 输出
+核心测试为 99/99；L20 GPU 2 的实际 CUDA smoke 验证 FP8 写入和 FlashInfer decode 输出
 finite。Qwen3-32B FP8 W8A8 TP4 在 GPU 2/3/6/7 上，BF16 KV 为 413,820 tokens、FP8 KV
 为 827,641 tokens，在相同 25.26 GiB KV budget 下达到 2.00x capacity；两者初始化后
 约剩 4.40 GiB/card，FP8 API 请求返回 HTTP 200。随后增加了 `first_batch` per-layer
@@ -48,6 +48,15 @@ ITL/TTFT 和质量 gate，因此不改变默认配置，完整 v2 仍在进行�
 同批 Q/K/V 对照显示 E4M3 relative-L2 约 2.8%；`scale=0.25` 无饱和但没有明显优于
 calibrated scale，过小 scale 会引入饱和，且短上下文 FP8 kernel 可能慢于 BF16。详细记录见
 `learning/experiments/061_fp8_kv_cache_v2.md`。
+
+### Experiment 061d result: real-model calibration telemetry
+
+实验 061d 为 `first_batch` 校准增加了显式 opt-in 的 rank-scoped JSON summary：每个 TP rank
+记录 64 层的 scale、写入元素数和饱和元素数，默认关闭时不增加统计开销。在 L20 GPU 2/3/6/7
+上对 Qwen3-32B FP8 W8A8 做真实请求，4 个 rank 均完成校准并返回 HTTP 200。256 层的 scale
+范围为 0.01681--0.26668，中位数 0.05228；累计写入 6,422,528 个元素，饱和 145 个，
+加权饱和率 0.00226%。结果支持继续做长上下文质量 gate，但不能把短请求 telemetry 当成
+质量或 TTFT 结论。详见 `learning/experiments/061_fp8_kv_cache_v2.md`。
 
 ## Decisions
 

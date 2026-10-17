@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import torch
 from minisgl.distributed import get_tp_info
 from minisgl.utils import div_even
@@ -35,6 +38,7 @@ class MHAKVCache(BaseKVCachePool):
         device: torch.device,
         scale: float = 1.0,
         calibration: str = "fixed",
+        calibration_summary: str | None = None,
     ) -> None:
         if scale <= 0.0:
             raise ValueError(f"KV cache scale must be positive, got {scale}")
@@ -55,6 +59,9 @@ class MHAKVCache(BaseKVCachePool):
         self._calibration = calibration
         self._layer_scales = [self._scale] * num_layers
         self._layer_calibrated = [calibration == "fixed"] * num_layers
+        self._calibration_summary_path = calibration_summary
+        self._layer_written_elements = [0] * num_layers
+        self._layer_saturated_elements = [0] * num_layers
         self._storage_shape = (num_pages * page_size, local_kv_heads, head_dim)
 
     def k_cache(self, index: int) -> torch.Tensor:
@@ -80,6 +87,13 @@ class MHAKVCache(BaseKVCachePool):
                     self._layer_scales[layer_id] = scale
                     self._layer_calibrated[layer_id] = True
             # FlashInfer consumes the matching dequantization scale at run time.
+            if self._calibration_summary_path is not None:
+                saturated = (
+                    (k.float().abs() >= scale * FP8_KV_MAX).sum()
+                    + (v.float().abs() >= scale * FP8_KV_MAX).sum()
+                )
+                self._layer_written_elements[layer_id] += 2 * k.numel()
+                self._layer_saturated_elements[layer_id] += int(saturated.item())
             k = (k.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
             v = (v.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
         elif k.dtype != self.dtype or v.dtype != self.dtype:
@@ -108,6 +122,41 @@ class MHAKVCache(BaseKVCachePool):
 
     def get_scale(self, layer_id: int) -> float:
         return self._layer_scales[layer_id]
+
+    def write_calibration_summary(self, path: str, rank: int) -> None:
+        if self._calibration_summary_path is None:
+            return
+        target = Path(path)
+        suffix = target.suffix or ".json"
+        target = target.with_name(f"{target.stem}.rank{rank}{suffix}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        layers = []
+        for layer_id, scale in enumerate(self._layer_scales):
+            written = self._layer_written_elements[layer_id]
+            saturated = self._layer_saturated_elements[layer_id]
+            layers.append(
+                {
+                    "layer_id": layer_id,
+                    "scale": scale,
+                    "calibrated": self._layer_calibrated[layer_id],
+                    "written_elements": written,
+                    "saturated_elements": saturated,
+                    "saturation_fraction": saturated / written if written else 0.0,
+                }
+            )
+        target.write_text(
+            json.dumps(
+                {
+                    "rank": rank,
+                    "dtype": str(self.dtype),
+                    "calibration": self._calibration,
+                    "layers": layers,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     @property
     def num_layers(self) -> int:

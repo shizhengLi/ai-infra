@@ -12,6 +12,8 @@ def test_kv_cache_dtype_cli_is_default_compatible() -> None:
     args, _ = parse_args(["--model", "unused", "--dtype", "bfloat16"])
     assert args.kv_cache_dtype == "auto"
     assert args.kv_cache_scale == 1.0
+    assert args.kv_cache_calibration == "fixed"
+    assert args.kv_cache_calibration_summary is None
 
 
 def test_kv_cache_fp8_cli_and_scale() -> None:
@@ -62,6 +64,24 @@ def test_fp8_cache_allocates_half_width_storage() -> None:
     assert cache.dtype is FP8_KV_DTYPE
     assert cache.scale == 0.125
     assert cache.get_scale(0) == 0.125
+
+
+def test_fp8_calibration_summary_is_rank_scoped(tmp_path) -> None:
+    cache = MHAKVCache(
+        num_kv_heads=1,
+        num_layers=1,
+        head_dim=8,
+        num_pages=1,
+        page_size=1,
+        dtype=FP8_KV_DTYPE,
+        device=torch.device("cpu"),
+        calibration="first_batch",
+        calibration_summary=str(tmp_path / "kv.json"),
+    )
+    cache.write_calibration_summary(str(tmp_path / "kv.json"), rank=2)
+    summary = (tmp_path / "kv.rank2.json").read_text(encoding="utf-8")
+    assert '"rank": 2' in summary
+    assert '"saturation_fraction": 0.0' in summary
     assert cache.k_cache(0).element_size() == 1
 
 

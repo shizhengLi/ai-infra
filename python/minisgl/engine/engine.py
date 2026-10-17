@@ -40,6 +40,8 @@ class ForwardOutput(NamedTuple):
 class Engine:
     def __init__(self, config: EngineConfig):
         assert not torch.cuda.is_initialized()
+        self.config = config
+        self.kv_cache_calibration_summary = config.kv_cache_calibration_summary
         set_tp_info(rank=config.tp_info.rank, size=config.tp_info.size)
         _adjust_config(config)
 
@@ -79,6 +81,7 @@ class Engine:
             dtype=self.kv_cache_dtype,
             scale=config.kv_cache_scale,
             calibration=config.kv_cache_calibration,
+            calibration_summary=config.kv_cache_calibration_summary,
         )
 
         # ======================= Page table initialization ========================
@@ -266,6 +269,10 @@ class Engine:
 
     def shutdown(self) -> None:
         self.graph_runner.destroy_cuda_graphs()
+        if self.kv_cache_calibration_summary is not None:
+            self.kv_cache.write_calibration_summary(
+                self.kv_cache_calibration_summary, self.config.tp_info.rank
+            )
         torch.distributed.destroy_process_group()
         destroy_distributed()
 

@@ -124,6 +124,15 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-calibration-summary",
+        default=ServerArgs.kv_cache_calibration_summary,
+        help=(
+            "Optional JSON path prefix for per-rank FP8 KV calibration scale and saturation "
+            "summary, written when the scheduler shuts down."
+        ),
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,
