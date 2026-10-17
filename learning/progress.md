@@ -69,6 +69,16 @@ temperature=0/top_k=1 下两种 dtype 输出 SHA-256 完全一致，完成 deter
 端到端性能加速，下一步做 fused cast/store CUDA kernel。详见
 `learning/experiments/062_fp8_kv_long_context_gate.md`。
 
+### Experiment 063 result: optional FP8 fused cast/store
+
+实验 063 新增默认关闭的 `--kv-cache-fused-store`，把 BF16/FP16-to-FP8 conversion、clamp 和
+indexed page store 合并到一个 CUDA kernel。L20 GPU 2/3/6/7 上 Qwen3-32B FP8 W8A8 TP4 的
+同 commit A/B 显示，4K/8K/16K 输入的 TPOT 分别降低 19.47%/14.58%/29.02%，输出吞吐提升
+14.56%/10.21%/16.50%；fused 与 legacy 写出的目标 FP8 cache bytes 完全一致，telemetry
+饱和率保持 0.000843%。但纯 CUDA event 微基准仍比 legacy 慢 13.6%--60.7%，因此这是一个
+有收益但尚未完成 kernel 性能门禁的 opt-in 原型，默认路径不切换。详见
+`learning/experiments/063_fp8_kv_fused_store.md`。
+
 ## Decisions
 
 - Start with Qwen3-0.6B because it makes iteration cheap; do not generalize its absolute throughput

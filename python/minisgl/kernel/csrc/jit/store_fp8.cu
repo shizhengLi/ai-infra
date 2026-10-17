@@ -8,6 +8,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
@@ -22,6 +23,25 @@ struct StoreFP8KernelParams {
   std::size_t kv_input_stride;
   std::size_t length;
 };
+
+template <typename InputT>
+__device__ __forceinline__ float4 load_scaled_x4(const InputT *src,
+                                                  std::size_t i,
+                                                  float inv_scale) {
+  float2 lo;
+  float2 hi;
+  if constexpr (std::is_same_v<InputT, __nv_bfloat16>) {
+    lo = __bfloat1622float2(
+        reinterpret_cast<const __nv_bfloat162 *>(src + i)[0]);
+    hi = __bfloat1622float2(
+        reinterpret_cast<const __nv_bfloat162 *>(src + i + 2)[0]);
+  } else {
+    lo = __half22float2(reinterpret_cast<const __half2 *>(src + i)[0]);
+    hi = __half22float2(reinterpret_cast<const __half2 *>(src + i + 2)[0]);
+  }
+  return {lo.x * inv_scale, lo.y * inv_scale, hi.x * inv_scale,
+          hi.y * inv_scale};
+}
 
 template <std::size_t kNumThreads, std::size_t kMaxOccupancy, bool kUsePDL,
           std::size_t kElementSize, typename InputT, std::integral T>
@@ -52,13 +72,21 @@ __global__ __launch_bounds__(kNumThreads, kMaxOccupancy) void //
         pointer::offset(v, warp_id * kv_input_stride));
     const float inv_scale = 1.0f / *scale;
 
-    for (std::size_t i = lane_id; i < kElementSize; i += kWarpThreads) {
-      float k_value = static_cast<float>(src_k[i]) * inv_scale;
-      float v_value = static_cast<float>(src_v[i]) * inv_scale;
-      k_value = fminf(fmaxf(k_value, -448.0f), 448.0f);
-      v_value = fminf(fmaxf(v_value, -448.0f), 448.0f);
-      dst_k[i] = __nv_fp8_e4m3(k_value);
-      dst_v[i] = __nv_fp8_e4m3(v_value);
+    for (std::size_t i = lane_id * 4; i < kElementSize; i += kWarpThreads * 4) {
+      float4 k_values = load_scaled_x4(src_k, i, inv_scale);
+      float4 v_values = load_scaled_x4(src_v, i, inv_scale);
+      k_values.x = fminf(fmaxf(k_values.x, -448.0f), 448.0f);
+      k_values.y = fminf(fmaxf(k_values.y, -448.0f), 448.0f);
+      k_values.z = fminf(fmaxf(k_values.z, -448.0f), 448.0f);
+      k_values.w = fminf(fmaxf(k_values.w, -448.0f), 448.0f);
+      v_values.x = fminf(fmaxf(v_values.x, -448.0f), 448.0f);
+      v_values.y = fminf(fmaxf(v_values.y, -448.0f), 448.0f);
+      v_values.z = fminf(fmaxf(v_values.z, -448.0f), 448.0f);
+      v_values.w = fminf(fmaxf(v_values.w, -448.0f), 448.0f);
+      const auto k_packed = __nv_fp8x4_e4m3(k_values);
+      const auto v_packed = __nv_fp8x4_e4m3(v_values);
+      reinterpret_cast<__nv_fp8x4_storage_t *>(dst_k)[i / 4] = k_packed.__x;
+      reinterpret_cast<__nv_fp8x4_storage_t *>(dst_v)[i / 4] = v_packed.__x;
     }
   }
 
@@ -74,6 +102,8 @@ struct StoreFP8Kernel {
                   const tvm::ffi::TensorView indices,
                   const tvm::ffi::TensorView k, const tvm::ffi::TensorView v,
                   const tvm::ffi::TensorView scale) {
+    static_assert(kElementSize % 4 == 0,
+                  "FP8 fused store requires a row width divisible by four");
     using namespace host;
     auto D = SymbolicSize{"D"};
     auto L = SymbolicSize{"L"};
