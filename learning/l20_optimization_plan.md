@@ -408,3 +408,12 @@ keep the wait default at 0 ms; do not claim a low-rate TTFT win. See
 状态机设计的面试价值，但只有单次重复，不能证明跨 workload 稳定收益。因此将其标记为
 **条件性接受、默认关闭**；后续若继续，应做至少三次重复和不同 output length/page size 的
 敏感性验证，而不是直接扩大默认流量。
+
+## Experiment 070 result
+
+实验 070 的多次重复没有通过 hysteresis 性能 gate：关闭 overlap 的 2 次重复中，cooldown=4
+和 pending gate=2048 将 retraction 降低 77.1%，但 1.5 req/s P90 TTFT 回退 5.57%，高负载
+基本持平。因此保留为 opt-in thrashing 控制，不改变默认。开启 overlap 的 12 请求限页压力
+在 4096/8192 pages 均触发 cache allocator 的 `0 evictable` 断言，说明提交但尚未完成的
+pipeline batch 的未来 KV reservation 没有被 admission 完整建模。下一实验优先修复这个安全
+不变量，再重新评估 overlap 下的性能。

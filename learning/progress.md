@@ -568,3 +568,16 @@ cooldown=4、pending gate=2048 将 retraction 从 849 次降到 144 次（-83.0%
 吞吐为 73.23 tok/s（control 72.30），P90 TTFT 在高负载从 3766.34 ms 降到 3678.23 ms。
 该结果支持条件性保留，但由于每个负载只有一次重复，仍保持 opt-in，不修改全局默认。
 详细记录见 `learning/experiments/069_retraction_hysteresis.md`。
+
+## 实验 070 结果
+
+实验 070 对实验 069 的 cooldown=4、pending gate=2048 做了关闭 overlap 的 2 次重复验证。
+在 4096 pages、8 请求的稳定参考路径上，retraction 从 2502 次降到 573 次（-77.1%），但
+1.5 req/s P90 TTFT 从 1322.42 ms 上升到 1396.08 ms（+5.57%），低负载 TTFT gate 失败；
+2.5 req/s 吞吐仅 +0.16%，P90 TTFT -0.07%。因此滞回仍是降低 reservation thrashing 的
+条件性控制，默认不启用。
+
+开启 overlap 并提高到 12 请求的限页压力时，4096/8192 pages 都出现
+`Cannot satisfy ... cache tokens with only 0 evictable` allocator 断言；这些运行没有计入有效
+benchmark。该发现把下一步重点转为 overlap pipeline 的 in-flight KV reservation/admission
+安全修复。详见 `learning/experiments/070_retraction_stability_overlap_boundary.md`。
