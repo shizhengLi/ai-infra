@@ -33,6 +33,7 @@ def create_kvcache_pool(
     scale: float = 1.0,
     calibration: str = "fixed",
     calibration_summary: str | None = None,
+    fused_store: bool = False,
 ) -> BaseKVCachePool:
     from .mha_pool import MHAKVCache  # TODO: support other variants (e.g. MLA)
 
@@ -47,6 +48,7 @@ def create_kvcache_pool(
         scale=scale,
         calibration=calibration,
         calibration_summary=calibration_summary,
+        fused_store=fused_store,
     )
 
 

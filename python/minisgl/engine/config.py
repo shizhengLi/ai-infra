@@ -35,6 +35,7 @@ class EngineConfig:
     kv_cache_scale: float = 1.0
     kv_cache_calibration: str = "fixed"
     kv_cache_calibration_summary: str | None = None
+    kv_cache_fused_store: bool = False
     max_seq_len_override: int | None = None
     num_page_override: int | None = None  # if not None, will override the number of pages
 

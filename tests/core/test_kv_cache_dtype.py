@@ -14,6 +14,7 @@ def test_kv_cache_dtype_cli_is_default_compatible() -> None:
     assert args.kv_cache_scale == 1.0
     assert args.kv_cache_calibration == "fixed"
     assert args.kv_cache_calibration_summary is None
+    assert args.kv_cache_fused_store is False
 
 
 def test_kv_cache_fp8_cli_and_scale() -> None:
@@ -32,6 +33,13 @@ def test_kv_cache_fp8_cli_and_scale() -> None:
     assert args.kv_cache_dtype == "float8_e4m3fn"
     assert args.kv_cache_scale == 0.25
     assert args.kv_cache_calibration == "fixed"
+
+
+def test_kv_cache_fused_store_cli() -> None:
+    args, _ = parse_args(
+        ["--model", "unused", "--dtype", "bfloat16", "--kv-cache-fused-store"]
+    )
+    assert args.kv_cache_fused_store is True
 
 
 def test_kv_cache_first_batch_calibration_is_finite() -> None:

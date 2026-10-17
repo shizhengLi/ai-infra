@@ -39,6 +39,7 @@ class MHAKVCache(BaseKVCachePool):
         scale: float = 1.0,
         calibration: str = "fixed",
         calibration_summary: str | None = None,
+        fused_store: bool = False,
     ) -> None:
         if scale <= 0.0:
             raise ValueError(f"KV cache scale must be positive, got {scale}")
@@ -59,7 +60,13 @@ class MHAKVCache(BaseKVCachePool):
         self._calibration = calibration
         self._layer_scales = [self._scale] * num_layers
         self._layer_calibrated = [calibration == "fixed"] * num_layers
+        self._layer_scale_tensors = (
+            [torch.full((1,), self._scale, device=device, dtype=torch.float32) for _ in range(num_layers)]
+            if dtype == FP8_KV_DTYPE
+            else []
+        )
         self._calibration_summary_path = calibration_summary
+        self._fused_store = fused_store
         self._layer_written_elements = [0] * num_layers
         self._layer_saturated_elements = [0] * num_layers
         self._storage_shape = (num_pages * page_size, local_kv_heads, head_dim)
@@ -86,6 +93,7 @@ class MHAKVCache(BaseKVCachePool):
                     scale = calibrate_fp8_kv_scale(k, v)
                     self._layer_scales[layer_id] = scale
                     self._layer_calibrated[layer_id] = True
+                    self._layer_scale_tensors[layer_id].fill_(scale)
             # FlashInfer consumes the matching dequantization scale at run time.
             if self._calibration_summary_path is not None:
                 saturated = (
@@ -94,6 +102,18 @@ class MHAKVCache(BaseKVCachePool):
                 )
                 self._layer_written_elements[layer_id] += 2 * k.numel()
                 self._layer_saturated_elements[layer_id] += int(saturated.item())
+            if self._fused_store:
+                from minisgl.kernel import store_fp8_cache
+
+                store_fp8_cache(
+                    k_cache=self._k_buffer[layer_id].view(self._storage_shape),
+                    v_cache=self._v_buffer[layer_id].view(self._storage_shape),
+                    indices=out_loc,
+                    k=k,
+                    v=v,
+                    scale=self._layer_scale_tensors[layer_id],
+                )
+                return
             k = (k.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
             v = (v.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
         elif k.dtype != self.dtype or v.dtype != self.dtype:

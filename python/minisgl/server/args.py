@@ -133,6 +133,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-fused-store",
+        action="store_true",
+        default=ServerArgs.kv_cache_fused_store,
+        help="Use the experimental fused BF16/FP16-to-FP8 KV cast and page-store kernel.",
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,

@@ -82,6 +82,7 @@ class Engine:
             scale=config.kv_cache_scale,
             calibration=config.kv_cache_calibration,
             calibration_summary=config.kv_cache_calibration_summary,
+            fused_store=config.kv_cache_fused_store,
         )
 
         # ======================= Page table initialization ========================
