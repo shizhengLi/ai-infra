@@ -18,10 +18,11 @@ DEFAULT_FP8_STORE_KERNEL_CONFIG = KernelConfig(num_threads=128, max_occupancy=1,
 def _jit_store_fp8_module(
     element_size: int,
     input_is_bfloat16: bool,
+    native_pair: bool,
     *,
     config: KernelConfig = DEFAULT_FP8_STORE_KERNEL_CONFIG,
 ) -> Module:
-    args = make_cpp_args(element_size, input_is_bfloat16, *config)
+    args = make_cpp_args(element_size, input_is_bfloat16, native_pair, *config)
     return load_jit(
         "store_fp8",
         *args,
@@ -37,6 +38,7 @@ def store_fp8_cache(
     k: torch.Tensor,
     v: torch.Tensor,
     scale: torch.Tensor,
+    native_pair: bool = False,
 ) -> None:
     """Fuse BF16/FP16 -> FP8 E4M3 conversion with indexed K/V page stores."""
     if k.dtype not in (torch.float16, torch.bfloat16):
@@ -49,5 +51,5 @@ def store_fp8_cache(
     k_cache = k_cache.view(num_tokens, -1)
     v_cache = v_cache.view(num_tokens, -1)
     element_size = k_cache.shape[1] * k_cache.element_size()
-    module = _jit_store_fp8_module(element_size, k.dtype == torch.bfloat16)
+    module = _jit_store_fp8_module(element_size, k.dtype == torch.bfloat16, native_pair)
     module.launch(k_cache, v_cache, indices, k, v, scale)

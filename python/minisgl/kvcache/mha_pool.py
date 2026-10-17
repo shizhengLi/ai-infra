@@ -40,6 +40,7 @@ class MHAKVCache(BaseKVCachePool):
         calibration: str = "fixed",
         calibration_summary: str | None = None,
         fused_store: bool = False,
+        native_pair: bool = False,
     ) -> None:
         if scale <= 0.0:
             raise ValueError(f"KV cache scale must be positive, got {scale}")
@@ -67,6 +68,7 @@ class MHAKVCache(BaseKVCachePool):
         )
         self._calibration_summary_path = calibration_summary
         self._fused_store = fused_store
+        self._native_pair = native_pair
         self._layer_written_elements = [0] * num_layers
         self._layer_saturated_elements = [0] * num_layers
         self._storage_shape = (num_pages * page_size, local_kv_heads, head_dim)
@@ -112,6 +114,7 @@ class MHAKVCache(BaseKVCachePool):
                     k=k,
                     v=v,
                     scale=self._layer_scale_tensors[layer_id],
+                    native_pair=self._native_pair,
                 )
                 return
             k = (k.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)

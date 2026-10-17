@@ -29,6 +29,7 @@
 | Graph-tail non-blocking priority | Complete, rejected | Long-output validation: C=32 P90 TPOT +0.07%, P99.9 -9.68%, throughput -0.32% |
 | FP8 W8A8 | Complete, accepted candidate | TP4 throughput +47-55%; memory/card -15.48%; MMLU -0.70 point |
 | INT4 AWQ-Marlin | Complete, quality gate failed | Qwen3-32B fits TP1; TP2 scales 1.60-1.75x; MMLU -1.23/-1.75 points |
+| FP8 KV native pair conversion | Complete, conditional | Selected write-kernel timings improve, but calibrated non-representable scales are not byte-exact; both switches remain opt-in |
 
 ## Experiment 061 result (stage 1)
 
@@ -78,6 +79,18 @@ indexed page store 合并到一个 CUDA kernel。L20 GPU 2/3/6/7 上 Qwen3-32B F
 饱和率保持 0.000843%。但纯 CUDA event 微基准仍比 legacy 慢 13.6%--60.7%，因此这是一个
 有收益但尚未完成 kernel 性能门禁的 opt-in 原型，默认路径不切换。详见
 `learning/experiments/063_fp8_kv_fused_store.md`。
+
+### Experiment 064 result: FP8 KV native pair conversion
+
+实验 064 在 SM89 上加入默认关闭的 `--kv-cache-native-pair`，使用 CUDA 原生
+`__half2`/`__nv_bfloat162` 和 `__nv_fp8x4_e4m3` 完成 pairwise scale/conversion。GPU smoke
+通过；可精确表示的 scale 与 float fused 输出 byte 完全一致，但 `scale=0.12345` 时 BF16
+有 3.65% 的 K byte mismatch，说明不能作为无条件 drop-in replacement。L20 row-width 1024
+的多轮 CUDA event 中，256/1024/16384 rows 分别下降 45.42%/19.65%/7.52%，4096 rows
+基本持平；未达到四个规模中至少三个改善 20% 的普适 kernel gate。Qwen3-32B TP4 4K
+端到端 native 相对同 commit float fused 吞吐 +3.15%、TPOT -5.49%，但 8K/16K 尚未有同轮
+float 对照。因此两级开关继续默认关闭，后续先解决 FP32 scale 精度，再进入 page size >1。
+详见 `learning/experiments/064_fp8_kv_native_pair_conversion.md`。
 
 ## Decisions
 

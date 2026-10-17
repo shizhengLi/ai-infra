@@ -83,6 +83,7 @@ class Engine:
             calibration=config.kv_cache_calibration,
             calibration_summary=config.kv_cache_calibration_summary,
             fused_store=config.kv_cache_fused_store,
+            native_pair=config.kv_cache_native_pair,
         )
 
         # ======================= Page table initialization ========================
@@ -293,6 +294,8 @@ def _adjust_config(config: EngineConfig):
 
     if config.kv_cache_scale <= 0.0:
         raise ValueError(f"--kv-cache-scale must be positive, got {config.kv_cache_scale}")
+    if config.kv_cache_native_pair and not config.kv_cache_fused_store:
+        raise ValueError("--kv-cache-native-pair requires --kv-cache-fused-store")
     if config.kv_cache_calibration not in {"fixed", "first_batch"}:
         raise ValueError(f"Unsupported KV cache calibration: {config.kv_cache_calibration}")
     if config.kv_cache_dtype == "float8_e4m3fn":

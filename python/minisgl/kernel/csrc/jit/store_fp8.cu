@@ -43,8 +43,28 @@ __device__ __forceinline__ float4 load_scaled_x4(const InputT *src,
           hi.y * inv_scale};
 }
 
+template <typename InputT>
+__device__ __forceinline__ __nv_fp8x4_storage_t
+load_scaled_native_x4(const InputT *src, std::size_t i, float inv_scale) {
+  if constexpr (std::is_same_v<InputT, __nv_bfloat16>) {
+    const auto scale = __float2bfloat162_rn(inv_scale);
+    const auto lo = __hmul2(
+        reinterpret_cast<const __nv_bfloat162 *>(src + i)[0], scale);
+    const auto hi = __hmul2(
+        reinterpret_cast<const __nv_bfloat162 *>(src + i + 2)[0], scale);
+    return __nv_fp8x4_e4m3(lo, hi).__x;
+  } else {
+    const auto scale = __float2half2_rn(inv_scale);
+    const auto lo = __hmul2(reinterpret_cast<const __half2 *>(src + i)[0], scale);
+    const auto hi = __hmul2(
+        reinterpret_cast<const __half2 *>(src + i + 2)[0], scale);
+    return __nv_fp8x4_e4m3(lo, hi).__x;
+  }
+}
+
 template <std::size_t kNumThreads, std::size_t kMaxOccupancy, bool kUsePDL,
-          std::size_t kElementSize, typename InputT, std::integral T>
+          std::size_t kElementSize, typename InputT, bool kNativePair,
+          std::integral T>
 __global__ __launch_bounds__(kNumThreads, kMaxOccupancy) void //
     store_kv_cache_fp8(const __grid_constant__ StoreFP8KernelParams params) {
   using namespace device;
@@ -73,27 +93,34 @@ __global__ __launch_bounds__(kNumThreads, kMaxOccupancy) void //
     const float inv_scale = 1.0f / *scale;
 
     for (std::size_t i = lane_id * 4; i < kElementSize; i += kWarpThreads * 4) {
-      float4 k_values = load_scaled_x4(src_k, i, inv_scale);
-      float4 v_values = load_scaled_x4(src_v, i, inv_scale);
-      k_values.x = fminf(fmaxf(k_values.x, -448.0f), 448.0f);
-      k_values.y = fminf(fmaxf(k_values.y, -448.0f), 448.0f);
-      k_values.z = fminf(fmaxf(k_values.z, -448.0f), 448.0f);
-      k_values.w = fminf(fmaxf(k_values.w, -448.0f), 448.0f);
-      v_values.x = fminf(fmaxf(v_values.x, -448.0f), 448.0f);
-      v_values.y = fminf(fmaxf(v_values.y, -448.0f), 448.0f);
-      v_values.z = fminf(fmaxf(v_values.z, -448.0f), 448.0f);
-      v_values.w = fminf(fmaxf(v_values.w, -448.0f), 448.0f);
-      const auto k_packed = __nv_fp8x4_e4m3(k_values);
-      const auto v_packed = __nv_fp8x4_e4m3(v_values);
-      reinterpret_cast<__nv_fp8x4_storage_t *>(dst_k)[i / 4] = k_packed.__x;
-      reinterpret_cast<__nv_fp8x4_storage_t *>(dst_v)[i / 4] = v_packed.__x;
+      if constexpr (kNativePair) {
+        reinterpret_cast<__nv_fp8x4_storage_t *>(dst_k)[i / 4] =
+            load_scaled_native_x4(src_k, i, inv_scale);
+        reinterpret_cast<__nv_fp8x4_storage_t *>(dst_v)[i / 4] =
+            load_scaled_native_x4(src_v, i, inv_scale);
+      } else {
+        float4 k_values = load_scaled_x4(src_k, i, inv_scale);
+        float4 v_values = load_scaled_x4(src_v, i, inv_scale);
+        k_values.x = fminf(fmaxf(k_values.x, -448.0f), 448.0f);
+        k_values.y = fminf(fmaxf(k_values.y, -448.0f), 448.0f);
+        k_values.z = fminf(fmaxf(k_values.z, -448.0f), 448.0f);
+        k_values.w = fminf(fmaxf(k_values.w, -448.0f), 448.0f);
+        v_values.x = fminf(fmaxf(v_values.x, -448.0f), 448.0f);
+        v_values.y = fminf(fmaxf(v_values.y, -448.0f), 448.0f);
+        v_values.z = fminf(fmaxf(v_values.z, -448.0f), 448.0f);
+        v_values.w = fminf(fmaxf(v_values.w, -448.0f), 448.0f);
+        const auto k_packed = __nv_fp8x4_e4m3(k_values);
+        const auto v_packed = __nv_fp8x4_e4m3(v_values);
+        reinterpret_cast<__nv_fp8x4_storage_t *>(dst_k)[i / 4] = k_packed.__x;
+        reinterpret_cast<__nv_fp8x4_storage_t *>(dst_v)[i / 4] = v_packed.__x;
+      }
     }
   }
 
   PDL::launch<kUsePDL>();
 }
 
-template <std::size_t kElementSize, bool kInputIsBFloat16,
+template <std::size_t kElementSize, bool kInputIsBFloat16, bool kNativePair,
           std::size_t kNumThreads = 128, std::size_t kMaxOccupancy = 1,
           bool kUsePDL = false>
 struct StoreFP8Kernel {
@@ -178,12 +205,14 @@ struct StoreFP8Kernel {
                                                  std::conditional_t<
                                                      kInputIsBFloat16,
                                                      __nv_bfloat16, __half>,
+                                                 kNativePair,
                                                  int32_t>
                             : store_kv_cache_fp8<kNumThreads, kMaxOccupancy,
                                                  kUsePDL, kElementSize,
                                                  std::conditional_t<
                                                      kInputIsBFloat16,
                                                      __nv_bfloat16, __half>,
+                                                 kNativePair,
                                                  int64_t>;
     LaunchKernel(num_blocks, kNumThreads, device)
         .with_attr(kUsePDL)(kernel, params);

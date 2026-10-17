@@ -140,6 +140,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-native-pair",
+        action="store_true",
+        default=ServerArgs.kv_cache_native_pair,
+        help=(
+            "Use the experimental native BF16/FP16 pairwise conversion in the fused "
+            "FP8 KV store; requires --kv-cache-fused-store."
+        ),
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,
