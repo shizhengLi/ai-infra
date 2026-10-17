@@ -30,6 +30,22 @@
 | FP8 W8A8 | Complete, accepted candidate | TP4 throughput +47-55%; memory/card -15.48%; MMLU -0.70 point |
 | INT4 AWQ-Marlin | Complete, quality gate failed | Qwen3-32B fits TP1; TP2 scales 1.60-1.75x; MMLU -1.23/-1.75 points |
 
+## Experiment 061 result (stage 1)
+
+实验 061 在 L20 SM89 的 FlashInfer 路径加入了默认关闭的 FP8 E4M3 KV cache。新增
+`--kv-cache-dtype` 和 `--kv-cache-scale`，metadata 将 BF16 query dtype 与 FP8 KV dtype
+分离，现有 `store_cache` 负责写入 FP8 buffer，FlashInfer 运行时接收对应的 K/V scale。
+同时修复了 page accounting 原先固定使用模型 BF16 itemsize 的问题，否则 FP8 只会省显存
+而不会增加可用 KV tokens。
+
+核心测试为 97/97；L20 GPU 2 的实际 CUDA smoke 验证 FP8 写入和 FlashInfer decode 输出
+finite。Qwen3-32B FP8 W8A8 TP4 在 GPU 2/3/6/7 上，BF16 KV 为 413,820 tokens、FP8 KV
+为 827,641 tokens，在相同 25.26 GiB KV budget 下达到 2.00x capacity；两者初始化后
+约剩 4.40 GiB/card，FP8 API 请求返回 HTTP 200。当前 scale=0.25 是固定实验值，尚未完成
+per-layer/head calibration、fused cast/store、长上下文 ITL/TTFT 和质量 gate，因此不改变
+默认配置，完整 v2 仍在进行中。详细记录见
+`learning/experiments/061_fp8_kv_cache_v2.md`。
+
 ## Decisions
 
 - Start with Qwen3-0.6B because it makes iteration cheap; do not generalize its absolute throughput

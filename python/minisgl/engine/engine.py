@@ -54,7 +54,8 @@ class Engine:
         self.stream = torch.cuda.Stream()
         torch.cuda.set_stream(self.stream)
         self.dtype = config.dtype
-        self.ctx = Context(config.page_size)
+        self.kv_cache_dtype = _resolve_kv_cache_dtype(config)
+        self.ctx = Context(config.page_size, dtype=config.dtype)
         set_global_ctx(self.ctx)
 
         self.tp_cpu_group = self._init_communication(config)
@@ -75,7 +76,8 @@ class Engine:
             num_pages=self.num_pages + 1,  # +1 for dummy page
             page_size=config.page_size,
             device=self.device,
-            dtype=self.dtype,
+            dtype=self.kv_cache_dtype,
+            scale=config.kv_cache_scale,
         )
 
         # ======================= Page table initialization ========================
@@ -183,7 +185,7 @@ class Engine:
             * config.model_config.head_dim
             * div_even(config.model_config.num_kv_heads, config.tp_info.size, allow_replicate=True)
             * config.page_size
-            * self.dtype.itemsize
+            * self.kv_cache_dtype.itemsize
             * config.model_config.num_layers
         )
         num_pages = config.num_page_override
@@ -195,7 +197,10 @@ class Engine:
         assert num_pages > 1, "Not enough memory for KV cache, try reducing --num-pages"
         num_tokens = num_pages * config.page_size
         real_kv_size = num_pages * cache_per_page
-        logger.info(f"Allocating {num_tokens} tokens for KV cache, K + V = {mem_GB(real_kv_size)}")
+        logger.info(
+            f"Allocating {num_tokens} tokens for KV cache ({self.kv_cache_dtype}), "
+            f"K + V = {mem_GB(real_kv_size)}"
+        )
         return num_pages
 
     def _sync_get_memory(self) -> Tuple[int, int]:
@@ -277,6 +282,16 @@ def _adjust_config(config: EngineConfig):
         override("attention_backend", backend)
         logger.info_rank0(f"Auto-selected attention backend: {config.attention_backend}")
 
+    if config.kv_cache_scale <= 0.0:
+        raise ValueError(f"--kv-cache-scale must be positive, got {config.kv_cache_scale}")
+    if config.kv_cache_dtype == "float8_e4m3fn":
+        if config.attention_backend != "fi":
+            raise ValueError(
+                "FP8 KV cache currently requires the FlashInfer attention backend (--attn fi)"
+            )
+        if config.page_size != 1:
+            raise ValueError("FP8 KV cache currently requires --page-size 1")
+
     if "trtllm" in config.attention_backend and config.page_size not in [16, 32, 64]:
         override("page_size", 64)
         logger.warning_rank0("Page size is overridden to 64 for TRTLLM backend")
@@ -292,3 +307,17 @@ def _adjust_config(config: EngineConfig):
     if config.model_config.is_moe and config.moe_backend == "auto":
         override("moe_backend", "fused")
         logger.info_rank0(f"Auto-selected MoE backend: {config.moe_backend}")
+
+
+def _resolve_kv_cache_dtype(config: EngineConfig) -> torch.dtype:
+    if config.kv_cache_dtype == "auto":
+        return config.dtype
+    dtype_map = {
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+        "float8_e4m3fn": torch.float8_e4m3fn,
+    }
+    try:
+        return dtype_map[config.kv_cache_dtype]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported KV cache dtype: {config.kv_cache_dtype}") from exc

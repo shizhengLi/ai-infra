@@ -31,6 +31,8 @@ class EngineConfig:
     use_pynccl: bool = True
     allow_bf16_reduced_precision_reduction: bool = True
     quantization: str | None = None
+    kv_cache_dtype: str = "auto"
+    kv_cache_scale: float = 1.0
     max_seq_len_override: int | None = None
     num_page_override: int | None = None  # if not None, will override the number of pages
 

@@ -7,6 +7,10 @@ from minisgl.utils import div_even
 from .base import BaseKVCachePool
 
 
+FP8_KV_DTYPE = torch.float8_e4m3fn
+FP8_KV_MAX = 448.0
+
+
 class MHAKVCache(BaseKVCachePool):
     """
     Base class for key-value caches.
@@ -22,7 +26,10 @@ class MHAKVCache(BaseKVCachePool):
         page_size: int,
         dtype: torch.dtype,
         device: torch.device,
+        scale: float = 1.0,
     ) -> None:
+        if scale <= 0.0:
+            raise ValueError(f"KV cache scale must be positive, got {scale}")
         tp_info = get_tp_info()
         local_kv_heads = div_even(num_kv_heads, tp_info.size, allow_replicate=True)
         self._kv_buffer = torch.empty(
@@ -34,6 +41,7 @@ class MHAKVCache(BaseKVCachePool):
         self._k_buffer = self._kv_buffer[0]
         self._v_buffer = self._kv_buffer[1]
         self._device = device
+        self._scale = float(scale)
         self._storage_shape = (num_pages * page_size, local_kv_heads, head_dim)
 
     def k_cache(self, index: int) -> torch.Tensor:
@@ -46,6 +54,14 @@ class MHAKVCache(BaseKVCachePool):
         self, k: torch.Tensor, v: torch.Tensor, out_loc: torch.Tensor, layer_id: int
     ) -> None:
         from minisgl.kernel import store_cache
+
+        if self.dtype == FP8_KV_DTYPE:
+            # FlashInfer consumes the matching dequantization scale at run time.
+            k = (k.float() / self._scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
+            v = (v.float() / self._scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
+        elif k.dtype != self.dtype or v.dtype != self.dtype:
+            k = k.to(self.dtype)
+            v = v.to(self.dtype)
 
         store_cache(
             k_cache=self._k_buffer[layer_id].view(self._storage_shape),
@@ -62,6 +78,10 @@ class MHAKVCache(BaseKVCachePool):
     @property
     def dtype(self) -> torch.dtype:
         return self._kv_buffer.dtype
+
+    @property
+    def scale(self) -> float:
+        return self._scale
 
     @property
     def num_layers(self) -> int:

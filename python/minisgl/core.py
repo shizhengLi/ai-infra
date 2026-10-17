@@ -137,6 +137,7 @@ class Batch:
 @dataclass
 class Context:
     page_size: int
+    dtype: torch.dtype = torch.float16
     # NOTE: this table always treat page_size = 1
     page_table: torch.Tensor = field(init=False)
     attn_backend: BaseAttnBackend = field(init=False)

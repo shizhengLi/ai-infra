@@ -94,6 +94,26 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-dtype",
+        choices=["auto", "float16", "bfloat16", "float8_e4m3fn"],
+        default=ServerArgs.kv_cache_dtype,
+        help=(
+            "KV cache storage dtype. 'auto' follows --dtype; float8_e4m3fn is an "
+            "experimental FlashInfer-only L20 path."
+        ),
+    )
+
+    parser.add_argument(
+        "--kv-cache-scale",
+        type=float,
+        default=ServerArgs.kv_cache_scale,
+        help=(
+            "FP8 KV dequantization scale. Keys/values are stored as value / scale; "
+            "use a calibrated positive scale when enabling FP8 KV."
+        ),
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,
