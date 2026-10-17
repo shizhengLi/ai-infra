@@ -38,8 +38,19 @@ class Req:
     def __post_init__(self) -> None:
         assert self.input_ids.is_cpu
         self.device_len = len(self.input_ids)
-        self.max_device_len = len(self.input_ids) + self.output_len
+        self.max_device_len = self.device_len + self.output_len
         assert 0 <= self.cached_len < self.device_len <= self.max_device_len
+        # Keep the public tensor as a view of valid tokens while retaining one
+        # stable CPU allocation for the complete request lifetime.  Decode
+        # appends then write one element instead of reallocating the prefix.
+        self._input_buffer = torch.empty(
+            self.max_device_len,
+            dtype=self.input_ids.dtype,
+            device=self.input_ids.device,
+            pin_memory=self.input_ids.is_pinned(),
+        )
+        self._input_buffer[: self.device_len].copy_(self.input_ids)
+        self.input_ids = self._input_buffer[: self.device_len]
 
     @property
     def remain_len(self) -> int:
@@ -54,7 +65,13 @@ class Req:
         self.device_len += 1
 
     def append_host(self, next_token: torch.Tensor) -> None:
-        self.input_ids = torch.cat([self.input_ids, next_token])
+        next_token = next_token.reshape(-1)
+        if next_token.numel() != 1:
+            raise ValueError("append_host expects exactly one token")
+        if self.device_len <= 0 or self.device_len > self.max_device_len:
+            raise RuntimeError("request host buffer is out of bounds")
+        self._input_buffer[self.device_len - 1] = next_token.item()
+        self.input_ids = self._input_buffer[: self.device_len]
 
     @property
     def can_decode(self) -> bool:
