@@ -438,8 +438,9 @@ shape/padding、#143 的 `Req.append_host` 和 #117/#55 的 batch tokenization �
 暂时超出当前 dense Qwen3-32B 主线或实现风险过高。
 
 下一阶段改为 upstream-derived PR 路线：先做 059 page-aware admission/retraction，再做 060
-预分配 request token buffer；随后评估 061/062 FP8 KV、063 page size >1、064 Graph shape policy
-和 065 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性 gate、显存和 TTFT/TPOT
+预分配 request token buffer；随后评估 061/062 FP8 KV、063 fused cast/store、064 page size >1、
+065 Graph shape policy 和 066 batch tokenization。每个候选都必须有 L20 FP8 TP4 对照、正确性
+gate、显存和 TTFT/TPOT
 指标，具体设计见 `learning/upstream_pr_opportunities.md`。
 
 ## Experiment 059 result (stage 1)
