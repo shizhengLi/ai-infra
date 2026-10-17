@@ -255,7 +255,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 064 | FP8 KV native pair conversion | **Complete, conditional:** SM89 native BF16/FP16 pair conversion lowers selected write-kernel timings, but non-representable scales are not byte-exact | At least 3/4 row sizes improve 20%; byte-exact output for calibrated scales; otherwise keep opt-in |
 | 065 | FlashInfer page size >1 | **Stage 1 complete, conditional:** metadata and BF16/FP8/Graph smoke pass; page 32 is a candidate, page 16 regresses in the first TP4 profile; default remains 1 | Complete C=1/8/32, 8K/16K, eviction and Graph-shape matrix; require no P99 regression before changing default |
 | 066 | L20 memory-aware CUDA Graph shapes | **Stage 2 complete, conditional:** with 3 repeats and 128-token output, l20 cuts padding 15.65% -> 1.48%, adds 0.33 GiB/card, and improves throughput 0.67%--1.00%; low-load P99 TPOT still regresses, so default remains coarse | Broader arrival/output matrix and no low-load P99 regression before changing default |
-| 067 | Batched tokenization | **Planned:** batch plain/chat tokenization and restore uid order, based on upstream #117/#55 | Tokenizer wall time 2x better at batch 32, TTFT P90 -5%, abort/order correctness |
+| 067 | Batched tokenization | **Stage 1 complete, online gate pending:** batch plain/chat tokenization restores uid order; Qwen3-0.6B CPU tokenizer median improves 2.26x at batch 32 | Qwen3-32B TP4 TTFT P90 -5%, plus num_tokenizer=0/2/4 abort/order/streaming correctness |
 
 Experiment 047 is complete. Use Qwen3-32B BF16 for TP2/4/8 because its dense checkpoint does not fit
 TP1 on a 48 GiB L20 at the production configuration. Experiment 048 is also complete: direct buffer=0 remains the
@@ -382,3 +382,11 @@ admission control or waiting-time/remaining-prefill-aware ordering.
 - Accepted changes have focused tests and do not regress correctness.
 - The result is meaningful on a model/load representative of the optimized path.
 - Each experiment has a numbered Markdown note under `learning/experiments/`.
+
+## Experiment 067 result
+
+Experiment 067 Stage 1 implemented batched plain/chat tokenization with a configurable worker
+batch size. The local Qwen3-0.6B mixed-request microbenchmark improved median tokenizer wall time
+2.26x (6.153 -> 2.725 ms), and old/new token ids matched for both input types. The online TTFT and
+multi-tokenizer correctness matrix remains the next gate; see
+`learning/experiments/067_batch_tokenization.md`.

@@ -16,6 +16,7 @@ class ServerArgs(SchedulerConfig):
     server_host: str = "127.0.0.1"
     server_port: int = 1919
     num_tokenizer: int = 0
+    tokenizer_batch_size: int = 32
     silent_output: bool = False
 
     @property
@@ -264,6 +265,13 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--tokenizer-batch-size",
+        type=int,
+        default=ServerArgs.tokenizer_batch_size,
+        help="Maximum number of queued tokenizer messages handled in one batch.",
+    )
+
+    parser.add_argument(
         "--max-prefill-length",
         "--max-extend-length",
         type=int,
@@ -482,6 +490,9 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
 
     # Parse arguments
     kwargs = parser.parse_args(args).__dict__.copy()
+
+    if kwargs["tokenizer_batch_size"] < 1:
+        parser.error("--tokenizer-batch-size must be at least 1")
 
     # resolve some arguments
     run_shell |= kwargs.pop("shell_mode")
