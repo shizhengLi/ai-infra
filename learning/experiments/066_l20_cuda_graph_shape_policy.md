@@ -106,3 +106,38 @@ TTFT P90 在三档负载都略有改善，但吞吐没有达到预注册的 +3% 
 - [l20 JSONL telemetry](../results/066_poisson_l20_pipeline.jsonl)
 - [同步 C=1/8/32 对照](../results/066_coarse_graph.md)
 
+## Stage 2：更长输出与三次重复
+
+第一阶段的输出长度为 64，且每个 arrival rate 只有两次重复。为确认尾延迟结论，Stage 2
+使用相同的 FP8 TP4 配置和 `input_lens=128/256/512`，将输出长度提高到 128，request count
+为 24，每个 arrival rate 做 3 次重复。coarse 与 l20 使用相同 seed `6602042`，覆盖
+4/8/12 req/s。
+
+### Stage 2 telemetry
+
+| policy | decode forwards | Graph hit | 平均 padding ratio | padding tokens |
+| --- | ---: | ---: | ---: | ---: |
+| coarse | 1847 | 100% | 15.6507% | 3171 |
+| l20 | 1870 | 100% | 1.4769% | 505 |
+
+在相同请求 token 数下，l20 将 padding token 减少约 84.1%。由于精确 shape 会改变 scheduler
+的 batch 边界，forward 次数略有增加，但没有产生 eager fallback。
+
+### Stage 2 端到端结果
+
+| Arrival rate | coarse tok/s | l20 tok/s | 吞吐变化 | coarse P90 TTFT ms | l20 P90 TTFT ms | TTFT 变化 | coarse P99 TPOT ms | l20 P99 TPOT ms | P99 变化 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 361.75 | 365.37 | +1.00% | 283.27 | 284.61 | +0.47% | 226.60 | 251.59 | +11.03% |
+| 8 | 484.36 | 488.59 | +0.87% | 469.78 | 464.88 | -1.04% | 314.11 | 298.18 | -5.07% |
+| 12 | 543.22 | 546.88 | +0.67% | 583.18 | 580.95 | -0.38% | 261.09 | 218.24 | -16.41% |
+
+P99.9 TPOT 变化为 4 req/s +0.08%、8 req/s -13.17%、12 req/s -3.40%。l20 在中高负载的
+尾延迟表现更好，但低负载 4 req/s 的 P99 TPOT 回退仍然存在；吞吐提升也未达到预注册的
+3% gate。因此结论仍是条件接受，不修改默认 coarse policy。
+
+Stage 2 原始结果：
+
+- [coarse 128-token benchmark](../results/066_stage2_coarse.md)
+- [l20 128-token benchmark](../results/066_stage2_l20.md)
+- [coarse Stage 2 JSONL telemetry](../results/066_stage2_coarse_pipeline.jsonl)
+- [l20 Stage 2 JSONL telemetry](../results/066_stage2_l20_pipeline.jsonl)

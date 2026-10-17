@@ -515,3 +515,9 @@ padding ratio 为 19.4848%，l20 降至 0.8661%，padding token 1825 -> 204，Gr
 分别为 +0.57%/+0.03%/-0.03%，P90 TTFT 分别下降 9.16%/2.65%/2.11%，但 8 req/s 的
 P99 TPOT 上升 42.02%。因此 l20 只作为条件候选，默认仍为 coarse；详见
 `learning/experiments/066_l20_cuda_graph_shape_policy.md`。
+
+实验 066 Stage 2 将输出长度提高到 128，并对 4/8/12 req/s 各做 3 次重复。coarse/l20 的
+平均 padding ratio 为 15.6507%/1.4769%，padding token 为 3171/505，Graph hit 均为 100%。
+l20 吞吐分别提升 1.00%/0.87%/0.67%；P90 TTFT 在三档负载变化为 +0.47%/-1.04%/-0.38%。
+P99 TPOT 在 8/12 req/s 分别下降 5.07%/16.41%，但 4 req/s 上升 11.03%，因此仍未满足
+“无 P99 回退”的默认 gate。l20 保留为条件 L20 profile，默认 coarse 不变。
