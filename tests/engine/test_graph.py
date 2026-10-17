@@ -43,6 +43,30 @@ class DetermineCudaGraphBatchSizesTest(unittest.TestCase):
             [2, 8],
         )
 
+    def test_l20_policy_captures_small_batches_exactly(self) -> None:
+        self.assertEqual(
+            _determine_cuda_graph_bs(
+                cuda_graph_bs=None,
+                cuda_graph_max_bs=32,
+                free_memory=40 * (1 << 30),
+                max_running_req=128,
+                shape_policy="l20",
+            ),
+            list(range(1, 17)) + [20, 24, 28, 32],
+        )
+
+    def test_explicit_policy_requires_explicit_shapes(self) -> None:
+        self.assertEqual(
+            _determine_cuda_graph_bs(
+                cuda_graph_bs=None,
+                cuda_graph_max_bs=32,
+                free_memory=40 * (1 << 30),
+                max_running_req=128,
+                shape_policy="explicit",
+            ),
+            [],
+        )
+
     def test_disabled_shapes_fall_back_without_padding(self) -> None:
         runner = GraphRunner.__new__(GraphRunner)
         runner.max_graph_bs = 32

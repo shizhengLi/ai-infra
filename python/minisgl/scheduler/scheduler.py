@@ -514,14 +514,21 @@ class Scheduler(SchedulerIOMixin):
             **details,
         }
         if batch is not None:
+            padded_batch_size = batch.padded_size if hasattr(batch, "padded_reqs") else None
+            graph_hit = self.engine.graph_runner.can_use_cuda_graph(batch)
             payload.update(
                 batch_id=self._pipeline_batch_ids.get(id(batch)),
                 phase=batch.phase,
                 batch_size=batch.size,
-                padded_batch_size=(
-                    batch.padded_size if hasattr(batch, "padded_reqs") else None
+                requested_batch_size=batch.size,
+                padded_batch_size=padded_batch_size,
+                padding_ratio=(
+                    (padded_batch_size - batch.size) / batch.size
+                    if padded_batch_size is not None and batch.size > 0
+                    else None
                 ),
-                uses_cuda_graph=self.engine.graph_runner.can_use_cuda_graph(batch),
+                graph_hit=graph_hit,
+                uses_cuda_graph=graph_hit,
             )
         self._pipeline_events.append(payload)
 

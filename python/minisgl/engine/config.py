@@ -23,6 +23,7 @@ class EngineConfig:
     moe_backend: str = "auto"
     cuda_graph_bs: List[int] | None = None
     cuda_graph_max_bs: int | None = None
+    cuda_graph_shape_policy: str = "coarse"
     cuda_graph_disable_bs: List[int] | None = None
     page_size: int = 1
     memory_ratio: float = 0.9

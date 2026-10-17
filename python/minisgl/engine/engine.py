@@ -127,6 +127,7 @@ class Engine:
             attn_backend=self.attn_backend,
             cuda_graph_bs=config.cuda_graph_bs,
             cuda_graph_max_bs=config.cuda_graph_max_bs,
+            cuda_graph_shape_policy=config.cuda_graph_shape_policy,
             cuda_graph_disable_bs=config.cuda_graph_disable_bs,
             max_running_req=config.max_running_req,
             free_memory=init_free_memory,
@@ -298,6 +299,12 @@ def _adjust_config(config: EngineConfig):
         raise ValueError("--kv-cache-native-pair requires --kv-cache-fused-store")
     if config.page_size <= 0:
         raise ValueError(f"--page-size must be positive, got {config.page_size}")
+    if config.cuda_graph_shape_policy not in {"coarse", "l20", "explicit"}:
+        raise ValueError(
+            f"Unsupported --cuda-graph-shape-policy: {config.cuda_graph_shape_policy}"
+        )
+    if config.cuda_graph_shape_policy == "explicit" and config.cuda_graph_bs is None:
+        raise ValueError("--cuda-graph-shape-policy explicit requires --cuda-graph-bs")
     if config.kv_cache_calibration not in {"fixed", "first_batch"}:
         raise ValueError(f"Unsupported KV cache calibration: {config.kv_cache_calibration}")
     if config.kv_cache_dtype == "float8_e4m3fn":

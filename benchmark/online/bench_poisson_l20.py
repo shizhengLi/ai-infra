@@ -48,6 +48,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-dtype", default="bfloat16")
     parser.add_argument("--server-memory-ratio", type=float, default=0.8)
     parser.add_argument("--server-graph-max-bs", type=int, default=64)
+    parser.add_argument(
+        "--server-graph-shape-policy", choices=["coarse", "l20", "explicit"], default="coarse"
+    )
     parser.add_argument("--server-max-extend-tokens", type=int, default=8192)
     parser.add_argument("--server-max-prefill-streak", type=int, default=1)
     parser.add_argument("--server-decode-active-prefill-tokens", type=int, required=True)
@@ -337,6 +340,7 @@ streamed token; TPOT excludes the final OpenAI finish event.
 - Tensor parallelism: `{config['server_tp']}`
 - Runtime dtype: `{config['server_dtype']}`
 - Quantization: `{config['server_quantization'] or 'none'}`
+- CUDA Graph shape policy: `{config['server_graph_shape_policy']}`
 - Normal prefill budget: `{config['server_max_extend_tokens']}`
 - Maximum prefill streak: `{config['server_max_prefill_streak']}`
 - Decode-active prefill budget: `{config['server_decode_active_prefill_tokens']}`
@@ -470,6 +474,7 @@ async def main() -> None:
             "server_dtype": args.server_dtype,
             "server_memory_ratio": args.server_memory_ratio,
             "server_graph_max_bs": args.server_graph_max_bs,
+            "server_graph_shape_policy": args.server_graph_shape_policy,
             "server_max_extend_tokens": args.server_max_extend_tokens,
             "server_max_prefill_streak": args.server_max_prefill_streak,
             "server_decode_active_prefill_tokens": args.server_decode_active_prefill_tokens,

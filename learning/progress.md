@@ -502,3 +502,16 @@ tok/s、P90 TPOT 52.98 ms；page 16 吞吐 11.0389 tok/s、P90 TPOT 64.07 ms；p
 TPOT -3.20%，page 16 吞吐 -10.53%、P90 TPOT +20.94%。page 32 只进入候选，不足以改默认；
 page 16 暂拒。下一步需要补齐并发、长上下文、eviction 和真实 Graph shape 矩阵，详见
 `learning/experiments/065_flashinfer_page_size_gt1.md`。
+
+## 实验 066 结果
+
+实验 066 增加了 `coarse|l20|explicit` CUDA Graph shape policy 和 requested/padded batch、
+padding ratio、graph hit telemetry。`l20` 在 batch 1--16 使用细粒度 Graph，20/24/28/32
+保留常用中等 shape；默认 coarse 行为不变。
+
+在 L20 GPU 2/3/6/7 上对 Qwen3-32B FP8 TP4 做相同 seed 的 Poisson 对照后，coarse 的平均
+padding ratio 为 19.4848%，l20 降至 0.8661%，padding token 1825 -> 204，Graph hit 均为
+100%。l20 capture 额外显存约 0.33 GiB/card，低于 1 GiB 预算；4/8/12 req/s 吞吐变化
+分别为 +0.57%/+0.03%/-0.03%，P90 TTFT 分别下降 9.16%/2.65%/2.11%，但 8 req/s 的
+P99 TPOT 上升 42.02%。因此 l20 只作为条件候选，默认仍为 coarse；详见
+`learning/experiments/066_l20_cuda_graph_shape_policy.md`。

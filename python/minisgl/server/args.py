@@ -238,6 +238,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--cuda-graph-shape-policy",
+        choices=["coarse", "l20", "explicit"],
+        default=ServerArgs.cuda_graph_shape_policy,
+        help=(
+            "CUDA graph shape policy: coarse uses powers/eights, l20 captures exact small "
+            "batches and sparse larger shapes, explicit requires --cuda-graph-bs."
+        ),
+    )
+
+    parser.add_argument(
         "--cuda-graph-disable-bs",
         type=int,
         nargs="+",

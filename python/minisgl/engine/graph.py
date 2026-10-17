@@ -51,9 +51,14 @@ def _determine_cuda_graph_bs(
     cuda_graph_max_bs: int | None,
     free_memory: int,
     max_running_req: int,
+    shape_policy: str = "coarse",
 ) -> List[int]:
+    if shape_policy not in {"coarse", "l20", "explicit"}:
+        raise ValueError(f"Unsupported CUDA graph shape policy: {shape_policy}")
     if cuda_graph_bs is not None:
         return sorted({bs for bs in cuda_graph_bs if 0 < bs <= max_running_req})
+    if shape_policy == "explicit":
+        return []
 
     free_memory_gb = free_memory / (1 << 30)
     if cuda_graph_max_bs is None:
@@ -66,11 +71,18 @@ def _determine_cuda_graph_bs(
     if cuda_graph_max_bs < 1:
         return []
 
-    graph_bs = [bs for bs in [1, 2, 4] if bs <= cuda_graph_max_bs]
-    graph_bs.extend(range(8, cuda_graph_max_bs + 1, 8))
+    if shape_policy == "l20":
+        # L20 serving is commonly dominated by small decode batches. Capture those
+        # shapes exactly, while keeping larger shapes sparse to bound capture cost.
+        graph_bs = list(range(1, min(16, cuda_graph_max_bs) + 1))
+        graph_bs.extend(bs for bs in (20, 24, 28, 32) if bs <= cuda_graph_max_bs)
+        graph_bs.extend(range(40, cuda_graph_max_bs + 1, 8))
+    else:
+        graph_bs = [bs for bs in [1, 2, 4] if bs <= cuda_graph_max_bs]
+        graph_bs.extend(range(8, cuda_graph_max_bs + 1, 8))
     if graph_bs[-1] != cuda_graph_max_bs:
         graph_bs.append(cuda_graph_max_bs)
-    return graph_bs
+    return sorted(set(graph_bs))
 
 
 def mem_GB(size: int) -> str:
@@ -90,6 +102,7 @@ class GraphRunner:
         attn_backend: BaseAttnBackend,
         cuda_graph_bs: List[int] | None,
         cuda_graph_max_bs: int | None,
+        cuda_graph_shape_policy: str,
         cuda_graph_disable_bs: List[int] | None,
         max_running_req: int,
         free_memory: int,
@@ -102,6 +115,7 @@ class GraphRunner:
             cuda_graph_max_bs=cuda_graph_max_bs,
             free_memory=free_memory,
             max_running_req=max_running_req,
+            shape_policy=cuda_graph_shape_policy,
         )
         self.attn_backend = attn_backend
         self.max_graph_bs = max(cuda_graph_bs) if cuda_graph_bs else 0
