@@ -43,6 +43,11 @@ class BaseKVCachePool(ABC):
         """Dequantization scale used by the attention backend."""
         ...
 
+    @abstractmethod
+    def get_scale(self, layer_id: int) -> float:
+        """Return the dequantization scale for one transformer layer."""
+        ...
+
     @property
     @abstractmethod
     def num_layers(self) -> int:

@@ -9,6 +9,13 @@ from .base import BaseKVCachePool
 
 FP8_KV_DTYPE = torch.float8_e4m3fn
 FP8_KV_MAX = 448.0
+FP8_KV_SCALE_MARGIN = 0.95
+
+
+def calibrate_fp8_kv_scale(k: torch.Tensor, v: torch.Tensor) -> float:
+    """Estimate a scalar dequantization scale from one layer's K/V activations."""
+    max_abs = torch.maximum(k.float().abs().amax(), v.float().abs().amax()).item()
+    return max(float(max_abs) / (FP8_KV_MAX * FP8_KV_SCALE_MARGIN), 1e-6)
 
 
 class MHAKVCache(BaseKVCachePool):
@@ -27,9 +34,12 @@ class MHAKVCache(BaseKVCachePool):
         dtype: torch.dtype,
         device: torch.device,
         scale: float = 1.0,
+        calibration: str = "fixed",
     ) -> None:
         if scale <= 0.0:
             raise ValueError(f"KV cache scale must be positive, got {scale}")
+        if calibration not in {"fixed", "first_batch"}:
+            raise ValueError(f"Unsupported KV cache calibration: {calibration}")
         tp_info = get_tp_info()
         local_kv_heads = div_even(num_kv_heads, tp_info.size, allow_replicate=True)
         self._kv_buffer = torch.empty(
@@ -42,6 +52,9 @@ class MHAKVCache(BaseKVCachePool):
         self._v_buffer = self._kv_buffer[1]
         self._device = device
         self._scale = float(scale)
+        self._calibration = calibration
+        self._layer_scales = [self._scale] * num_layers
+        self._layer_calibrated = [calibration == "fixed"] * num_layers
         self._storage_shape = (num_pages * page_size, local_kv_heads, head_dim)
 
     def k_cache(self, index: int) -> torch.Tensor:
@@ -56,9 +69,19 @@ class MHAKVCache(BaseKVCachePool):
         from minisgl.kernel import store_cache
 
         if self.dtype == FP8_KV_DTYPE:
+            scale = self._layer_scales[layer_id]
+            if not self._layer_calibrated[layer_id]:
+                # CUDA Graph capture must not call .item() on a captured tensor. The
+                # eager prefill path is the intended calibration path; capture falls
+                # back to the explicit CLI scale and remains deterministic.
+                is_capturing = k.is_cuda and torch.cuda.is_current_stream_capturing()
+                if not is_capturing:
+                    scale = calibrate_fp8_kv_scale(k, v)
+                    self._layer_scales[layer_id] = scale
+                    self._layer_calibrated[layer_id] = True
             # FlashInfer consumes the matching dequantization scale at run time.
-            k = (k.float() / self._scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
-            v = (v.float() / self._scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
+            k = (k.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
+            v = (v.float() / scale).clamp(-FP8_KV_MAX, FP8_KV_MAX).to(self.dtype)
         elif k.dtype != self.dtype or v.dtype != self.dtype:
             k = k.to(self.dtype)
             v = v.to(self.dtype)
@@ -82,6 +105,9 @@ class MHAKVCache(BaseKVCachePool):
     @property
     def scale(self) -> float:
         return self._scale
+
+    def get_scale(self, layer_id: int) -> float:
+        return self._layer_scales[layer_id]
 
     @property
     def num_layers(self) -> int:

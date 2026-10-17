@@ -59,7 +59,6 @@ class FIMetadata(BaseAttnMetadata):
     seq_lens_cpu:       torch.Tensor  # on cpu
     dtype:              torch.dtype
     kv_dtype:            torch.dtype
-    kv_scale:            float
     wrapper:            BatchPrefillWithPagedKVCacheWrapper | BatchDecodeWithPagedKVCacheWrapper
     initialized:        bool = False
     # fmt: on
@@ -190,8 +189,8 @@ class FlashInferBackend(BaseAttnBackend):
         return metadata.wrapper.run(
             q=q,
             paged_kv_cache=kv_cache,
-            k_scale=metadata.kv_scale,
-            v_scale=metadata.kv_scale,
+            k_scale=self.kvcache.get_scale(layer_id),
+            v_scale=self.kvcache.get_scale(layer_id),
         )
 
     def prepare_metadata(self, batch: Batch) -> None:
@@ -229,7 +228,6 @@ class FlashInferBackend(BaseAttnBackend):
             seq_lens_cpu=seq_len_cpu,
             dtype=get_global_ctx().dtype,
             kv_dtype=self.kvcache.dtype,
-            kv_scale=self.kvcache.scale,
             wrapper=self.decode_wrappers if batch.is_decode else self.prefill_wrapper,
         )
 

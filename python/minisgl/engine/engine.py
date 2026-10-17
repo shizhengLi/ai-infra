@@ -78,6 +78,7 @@ class Engine:
             device=self.device,
             dtype=self.kv_cache_dtype,
             scale=config.kv_cache_scale,
+            calibration=config.kv_cache_calibration,
         )
 
         # ======================= Page table initialization ========================
@@ -284,6 +285,8 @@ def _adjust_config(config: EngineConfig):
 
     if config.kv_cache_scale <= 0.0:
         raise ValueError(f"--kv-cache-scale must be positive, got {config.kv_cache_scale}")
+    if config.kv_cache_calibration not in {"fixed", "first_batch"}:
+        raise ValueError(f"Unsupported KV cache calibration: {config.kv_cache_calibration}")
     if config.kv_cache_dtype == "float8_e4m3fn":
         if config.attention_backend != "fi":
             raise ValueError(
@@ -291,6 +294,8 @@ def _adjust_config(config: EngineConfig):
             )
         if config.page_size != 1:
             raise ValueError("FP8 KV cache currently requires --page-size 1")
+    elif config.kv_cache_calibration != "fixed":
+        raise ValueError("KV cache calibration is only supported for FP8 KV cache")
 
     if "trtllm" in config.attention_backend and config.page_size not in [16, 32, 64]:
         override("page_size", 64)

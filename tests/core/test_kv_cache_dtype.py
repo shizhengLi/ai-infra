@@ -4,7 +4,7 @@ import torch
 from minisgl.distributed import DistributedInfo, set_tp_info
 from minisgl.engine.config import EngineConfig
 from minisgl.engine.engine import _resolve_kv_cache_dtype
-from minisgl.kvcache.mha_pool import FP8_KV_DTYPE, MHAKVCache
+from minisgl.kvcache.mha_pool import FP8_KV_DTYPE, MHAKVCache, calibrate_fp8_kv_scale
 from minisgl.server.args import parse_args
 
 
@@ -29,6 +29,14 @@ def test_kv_cache_fp8_cli_and_scale() -> None:
     )
     assert args.kv_cache_dtype == "float8_e4m3fn"
     assert args.kv_cache_scale == 0.25
+    assert args.kv_cache_calibration == "fixed"
+
+
+def test_kv_cache_first_batch_calibration_is_finite() -> None:
+    k = torch.tensor([[-2.0, 0.5]], dtype=torch.bfloat16)
+    v = torch.tensor([[1.0, 3.0]], dtype=torch.bfloat16)
+    scale = calibrate_fp8_kv_scale(k, v)
+    assert scale == pytest.approx(3.0 / (448.0 * 0.95), rel=1e-5)
 
 
 def test_kv_cache_dtype_resolution() -> None:
@@ -53,6 +61,7 @@ def test_fp8_cache_allocates_half_width_storage() -> None:
     )
     assert cache.dtype is FP8_KV_DTYPE
     assert cache.scale == 0.125
+    assert cache.get_scale(0) == 0.125
     assert cache.k_cache(0).element_size() == 1
 
 

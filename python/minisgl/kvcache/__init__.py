@@ -31,6 +31,7 @@ def create_kvcache_pool(
     dtype: torch.dtype,
     device: torch.device,
     scale: float = 1.0,
+    calibration: str = "fixed",
 ) -> BaseKVCachePool:
     from .mha_pool import MHAKVCache  # TODO: support other variants (e.g. MLA)
 
@@ -43,6 +44,7 @@ def create_kvcache_pool(
         device=device,
         dtype=dtype,
         scale=scale,
+        calibration=calibration,
     )
 
 

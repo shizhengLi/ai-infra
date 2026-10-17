@@ -41,9 +41,10 @@
 核心测试为 97/97；L20 GPU 2 的实际 CUDA smoke 验证 FP8 写入和 FlashInfer decode 输出
 finite。Qwen3-32B FP8 W8A8 TP4 在 GPU 2/3/6/7 上，BF16 KV 为 413,820 tokens、FP8 KV
 为 827,641 tokens，在相同 25.26 GiB KV budget 下达到 2.00x capacity；两者初始化后
-约剩 4.40 GiB/card，FP8 API 请求返回 HTTP 200。当前 scale=0.25 是固定实验值，尚未完成
-per-layer/head calibration、fused cast/store、长上下文 ITL/TTFT 和质量 gate，因此不改变
-默认配置，完整 v2 仍在进行中。详细记录见
+约剩 4.40 GiB/card，FP8 API 请求返回 HTTP 200。随后增加了 `first_batch` per-layer
+calibration：graph-disabled 的真实 Qwen3-32B TP4 服务首个 prefill 请求同样返回 HTTP 200，
+且 calibration smoke 验证 scale 会在首批后固定。当前仍未完成 fused cast/store、长上下文
+ITL/TTFT 和质量 gate，因此不改变默认配置，完整 v2 仍在进行中。详细记录见
 `learning/experiments/061_fp8_kv_cache_v2.md`。
 
 ## Decisions

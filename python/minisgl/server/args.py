@@ -114,6 +114,16 @@ def parse_args(args: List[str], run_shell: bool = False) -> Tuple[ServerArgs, bo
     )
 
     parser.add_argument(
+        "--kv-cache-calibration",
+        choices=["fixed", "first_batch"],
+        default=ServerArgs.kv_cache_calibration,
+        help=(
+            "FP8 KV scale policy. 'fixed' uses --kv-cache-scale; 'first_batch' estimates "
+            "one max-abs scale per layer from the first eager prefill batch."
+        ),
+    )
+
+    parser.add_argument(
         "--tensor-parallel-size",
         "--tp-size",
         type=int,
