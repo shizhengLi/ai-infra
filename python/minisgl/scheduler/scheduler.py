@@ -473,7 +473,15 @@ class Scheduler(SchedulerIOMixin):
                         "active_decode_requests": active_decode_requests,
                     }
         if batch is not None and batch.is_decode:
+            requested_decode_batch_size = batch.size
             batch = self._fit_decode_batch(batch)
+            if batch is not None and batch.size < requested_decode_batch_size:
+                self._record_pipeline_event(
+                    "decode_capacity_trimmed",
+                    batch,
+                    requested_batch_size=requested_decode_batch_size,
+                    selected_batch_size=batch.size,
+                )
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
             if self.prefill_telemetry_enabled and self._is_primary_rank:
@@ -587,11 +595,12 @@ class Scheduler(SchedulerIOMixin):
         if batch is not None:
             padded_batch_size = batch.padded_size if hasattr(batch, "padded_reqs") else None
             graph_hit = self.engine.graph_runner.can_use_cuda_graph(batch)
+            requested_batch_size = details.pop("requested_batch_size", batch.size)
             payload.update(
                 batch_id=self._pipeline_batch_ids.get(id(batch)),
                 phase=batch.phase,
                 batch_size=batch.size,
-                requested_batch_size=batch.size,
+                requested_batch_size=requested_batch_size,
                 padded_batch_size=padded_batch_size,
                 padding_ratio=(
                     (padded_batch_size - batch.size) / batch.size

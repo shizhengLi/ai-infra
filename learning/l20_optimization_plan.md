@@ -426,3 +426,11 @@ pipeline batch 的未来 KV reservation 没有被 admission 完整建模。下�
 24/24 和完整 `tests/core` 通过；Qwen3-4B-AWQ 单卡 L20 功能冒烟 6/6 请求完成、SLO 100%，无
 allocator assertion。该修复的价值是保持 cache allocator 安全不变量，尚无端到端性能收益证据，
 默认仍不启用额外激进策略。下一步是 TP4 限页 overlap 压力和 starvation/fairness 评估。
+
+## 实验 072 结果
+
+TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace（12 请求短 burst、
+32 请求长 burst），没有 allocator assertion、请求丢失或进程异常退出。长 burst P90 TTFT 为
+19.71 秒，证明小 cache 下 tail queueing 已成为主要问题。新增容量裁剪 telemetry 在两轮均为
+0 次，最大 decode batch 为 3，因此实验没有证明 `_fit_decode_batch` 在真实线上被触发；不能把
+稳定性结果解释为性能提升。下一步转为确定性 cache occupancy/fairness 边界测试。

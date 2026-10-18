@@ -81,6 +81,31 @@ class TestAllocateEvictPageAlignment:
         assert trimmed is not None
         assert [req.uid for req in trimmed.reqs] == [0, 1]
 
+    def test_pipeline_event_preserves_requested_decode_size(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.prefill_telemetry_enabled = True
+        scheduler._is_primary_rank = True
+        scheduler._pipeline_events = []
+        scheduler._pipeline_batch_ids = {}
+        scheduler.engine = SimpleNamespace(
+            graph_runner=SimpleNamespace(can_use_cuda_graph=lambda batch: False)
+        )
+        batch = core.Batch(
+            reqs=[SimpleNamespace(uid=0), SimpleNamespace(uid=1)], phase="decode"
+        )
+
+        scheduler._record_pipeline_event(
+            "decode_capacity_trimmed",
+            batch,
+            requested_batch_size=4,
+            selected_batch_size=2,
+        )
+
+        event = scheduler._pipeline_events[0]
+        assert event["requested_batch_size"] == 4
+        assert event["selected_batch_size"] == 2
+        assert event["batch_size"] == 2
+
     def test_allocate_after_evict_returns_page_aligned(self):
         """Allocated pages after eviction must be page-aligned."""
         page_size = 4

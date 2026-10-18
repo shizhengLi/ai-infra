@@ -591,3 +591,13 @@ benchmark。该发现把下一步重点转为 overlap pipeline 的 in-flight KV 
 出现 allocator assertion；telemetry 记录 2 次 safe retraction、8 个 token。该结果只接受
 为 overlap 崩溃防护的 correctness 修复，不宣称吞吐提升，后续需在 4 卡 TP4 限页压力下验证
 裁剪比例、公平性和 tail latency。详见 `learning/experiments/071_overlap_decode_capacity_guard.md`。
+
+## 实验 072 结果
+
+实验 072 在 L20 GPU 2/3/6/7 上运行 Qwen3-32B-AWQ TP4、96 page KV cache 的 overlap 压力。
+12 请求/16 输出 token 和 32 请求/64 输出 token 两轮 trace 均全部完成，没有复现 allocator
+assertion 或请求丢失；长 burst 的 P90/P99 TTFT 达到 19.71/21.80 秒，说明极小 cache 下主要
+问题是排队 tail。新增的 `decode_capacity_trimmed` telemetry 在两轮中均为 0，最大 decode
+batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 batch，本实验没有真实命中
+071 的裁剪分支。该结果接受为 TP4 稳定性证据，不宣称性能收益；下一步做确定性小 cache 边界
+测试和 starvation 检查。详见 `learning/experiments/072_tp4_overlap_capacity_pressure.md`。
