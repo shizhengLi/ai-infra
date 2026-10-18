@@ -648,7 +648,7 @@ deferred 都为 0。512-token/5 请求的 output=83/75 定向试探同样无 tri
 继续 page-aware 主线，应先设计 overlap/page allocation race 的最小 reproducer；否则当前
 路线进入实验 086，page-aware 的真实 trim gate 保留为后续独立前置条件。
 
-### 实验 086：Req 预分配 buffer 上游化
+### 实验 086：Req 预分配 buffer 上游化（已完成，条件接受）
 
 把实验 060 的实现整理成独立变更：`Req` 初始化一次 `torch.empty(max_device_len)`，append
 只写入下一个位置并返回有效长度 view。补充 aborted request、capacity view、tokenizer 输出
@@ -656,6 +656,14 @@ deferred 都为 0。512-token/5 请求的 output=83/75 定向试探同样无 tri
 
 验收是 CPU append wall-time、allocation 次数和 token identity；如果端到端 tok/s 不变，必须
 如实写成 CPU overhead/可扩展性 PR，不把 microbenchmark 结果包装成 serving 吞吐提升。
+
+实验 086 已完成 4096/8192 output benchmark：preallocated wall-time 44.76/91.70 ms，
+legacy cat 13.64/29.58 ms；allocation=1，理论 copy reduction=2457x/4551x。focused
+Req/safe-retraction tests 10/10 通过；实验 060 的 L20 A/B 也确认 allocation -100%、
+copied tokens -99.95%，但 E2E throughput 没有收益。因此 correctness 和 allocator/copy
+gate 通过，CPU wall-time -50% 与 serving throughput gate 拒绝。保留当前默认 preallocated
+实现，`cat` 仅作 regression mode；该能力可拆成独立 upstream PR，PR 叙述聚焦 CPU overhead
+和长输出可扩展性。
 
 ### 实验 087：FP8 KV cache 最终 quality/performance gate
 

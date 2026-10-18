@@ -88,9 +88,10 @@ capacity view 当成有效长度。
 
 ### 验收
 
-- 单请求 4096/8192 output 的 host append CPU 时间降低至少 50%。
-- Qwen3-32B FP8 TP4 长输出 workload 总吞吐提高 3--8%，或在无吞吐变化时降低 scheduler
-  CPU 占用。
+- 单请求 4096/8192 output 必须报告 host append wall-time、allocation 次数和 copy bytes；
+  本地实验已证明 allocation/copy 显著下降，但 wall-time -50% gate 未通过。
+- Qwen3-32B FP8 TP4 长输出 workload 作为非回归指标；当前 E2E 吞吐无提升，因此 PR 不得
+  宣称 serving throughput gain，最多定位为 scheduler CPU/allocator pressure 基础设施。
 - 生成 token 与 baseline 完全一致，`torch.cat` 在 decode 热路径中计数为 0。
 - 对 `Req` 增加 capacity/length 单元测试和 aborted request 测试。
 
@@ -232,7 +233,7 @@ page、FP8 KV、Graph 和 tokenizer 的大合集。
 | decode admission safety guard | 已实现未来 page demand guard | 实验 071/072 无 allocator assertion；默认策略不激进 | 中高；补齐 scheduler focused tests 后可提交 |
 | capacity round-robin / UID cursor | 已实现公平选择和动态 UID 维护 | 实验 073/074/075/076/084；动态集合 trace 通过；085b 真实多候选仍被 admission guard 吸收 | 中高；线上 trim 仍是可选增强证据 |
 | wait-round telemetry | 已实现字段和 trace 输出 | 实验 076/084 命中 12 trim + 1 deferred；077/082/083 保留 admission 负证据 | 高；属于低风险 observability PR |
-| Req preallocated token buffer | 本地已验证 allocation/copy 明显下降 | 实验 060 无 token 错误，但 E2E 吞吐无收益 | 高；应诚实定位为 CPU overhead PR |
+| Req preallocated token buffer | 本地已验证 allocation/copy 明显下降；实验 086 完成长输出 gate | 实验 060/086 无 token 错误，allocation -100%、copy reduction 2457x/4551x，但 E2E 吞吐无收益、microbenchmark wall-time 变慢 | 高；可提交，但必须定位为 CPU overhead/可扩展性 PR |
 | page-aware reservation | 已实现 opt-in | 实验 078 有 trim 安全收益，079/083/085/085b 未形成稳定线上收益，084 验证公平基础设施；真实矩阵均 trim=0 | 低；不应包装成吞吐 PR，需先有 overlap/trim 证据 |
 | L20 Graph shape policy | 已实现 opt-in l20 policy | 实验 066 padding 15.65% -> 1.48%，低负载 tail 回退 | 中；需要更广矩阵和显存预算测试 |
 | FP8 KV cache | 有 opt-in pool/fused/native 原型 | 实验 061-064 capacity 约 2x，但长上下文 gate 未通过 | 低；先完成 087，不应直接 PR 默认路径 |
@@ -288,6 +289,11 @@ page-aware 性能收益。
 - benchmark 同时报告 append wall-time、allocation 次数、scheduler CPU 和 E2E tok/s。
 
 如果 E2E 没有收益，PR 描述必须写“减少 CPU 复制和分配”，不能写“提升 serving 吞吐”。
+
+实验 086 补充了 4096/8192 output 的实测边界：预分配平均 44.76/91.70 ms，legacy cat
+平均 13.64/29.58 ms；因此 upstream PR 不应把单线程 Python microbenchmark 的 wall-time
+写成收益。应把重点放在 allocation 次数、复制字节、有效长度 view、capacity invariant、
+abort/streaming 顺序和长期运行的 allocator pressure；端到端 tok/s 作为非回归指标。
 
 ### PR-4：page-aware admission and capacity fairness
 

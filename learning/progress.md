@@ -748,3 +748,17 @@ SLO=100%，但最大 decode batch 都只有 5，`decode_capacity_trimmed/deferre
 和负证据，不修改默认策略。后续不再盲目扩大 page-aware A/B，应转向 overlap/page allocation
 边界验证，或推进实验 086 的独立 Req buffer PR。详见
 `learning/experiments/085b_targeted_trim_candidate_pressure.md`。
+
+## 实验 086 结果
+
+实验 086 对 `Req` 预分配 token buffer 做了 4096/8192 output 的 CPU 长输出 benchmark，
+并运行 `test_req_buffer.py` 与 `test_safe_retraction.py` 的 focused 回归。4096 output 下，
+preallocated/legacy cat 平均 wall-time 为 44.76/13.64 ms；8192 output 下为 91.70/29.58 ms。
+预分配把 allocation 次数降为 1，理论 copy bytes 从 50,323,456/167,755,776 降到 20,480/
+36,864，copy reduction 为 2457x/4551x，但该 Python microbenchmark 仍比 C++ `torch.cat`
+慢约 3.28x/3.10x。focused tests 通过 10/10。
+
+结合实验 060 的真实 L20 A/B（allocation -100%、copied tokens -99.95%，端到端吞吐 -0.21%），
+结论是 correctness 和 allocator/copy pressure gate 通过，CPU wall-time -50% 与 serving
+throughput gate 未通过。该改动适合独立 upstream PR，但只能描述为长输出 CPU 基础设施优化，
+不能宣称当前 L20 吞吐提升。详见 `learning/experiments/086_req_buffer_upstream_gate.md`。

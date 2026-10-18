@@ -124,6 +124,11 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
   根因是 `DecodeManager.inflight_tokens` 的 page 边界安全预算在 `_fit_decode_batch` 之前
   拦截了超容量候选。这个结果证明提高 arrival rate 不能绕过 admission guard，后续应验证
   overlap/page allocation race，而不是继续重复普通 A/B。
+- 实验 086：对 Req 预分配 buffer 做 4096/8192 output 长输出 benchmark，allocation 固定为
+  1，理论 copy reduction 为 2457x/4551x，但 Python microbenchmark 比 legacy `torch.cat`
+  慢约 3.28x/3.10x；focused Req/safe-retraction tests 10/10。结合实验 060 的 L20 A/B，
+  该改动消除了 allocation 和 O(n) copy，却没有端到端吞吐收益。面试时应把它定位为
+  allocator/copy pressure 基础设施 PR，而不是 serving 性能 PR。
 
 ## 当前默认决策
 
@@ -167,8 +172,7 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 
 1. 实验 085c（条件性）：只做 overlap/page allocation race 的最小 reproducer；不再靠提高
    arrival rate 反复 sweep。若仍无法命中真实 trim，接受 deterministic integration 证据即可。
-2. 实验 086：把 `Req` 预分配 buffer 和 append allocation telemetry 整理为独立上游 PR，
-   用长输出 CPU benchmark 证明收益边界。
+2. 实验 086：已完成；整理成独立上游 PR，明确 CPU overhead/可扩展性收益边界。
 3. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，
    保留为研究原型，不修改默认。
 4. 实验 088：将 telemetry、PyNCCL linker、page-aware admission 和 Graph policy 的接口
