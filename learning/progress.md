@@ -696,3 +696,12 @@ P90 TTFT 为 3261/3471 ms；256-token cache 在 80 req/s 下吞吐降至 89.96 t
 之前通过 admission 排队，256-token 场景的 decode batch 全部退化为 1。该结果接受为容量
 backpressure 和排队 tail 的证据，不宣称裁剪分支收益；下一步做 256-token cache 下 token 与
 page-aware reservation 的公平性 A/B。详见 `learning/experiments/082_tp4_kv_pressure_admission.md`。
+
+## 实验 083 结果
+
+实验 083 在同一 256-token KV cache、16 请求、128-token 输出和 80 req/s 压力下比较 token 与
+page-aware reservation。token 吞吐 88.99±0.39 tok/s、P90 TTFT 19957 ms；page-aware 吞吐
+90.14±0.58 tok/s、P90 TTFT 19719 ms，表面提升仅 1.30%。两组 telemetry 完全相同：无
+capacity trim/deferred/retraction，6160 个 decode batch 全部为 batch=1，说明 admission 已
+将压力串行化，reservation 没有命中公平性分支。该结果接受为中性 A/B，不修改默认策略。详见
+`learning/experiments/083_tp4_reservation_fairness_under_pressure.md`。

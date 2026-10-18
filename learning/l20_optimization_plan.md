@@ -515,3 +515,11 @@ page 粒度与 decode batch shape、page 对齐和持续 KV 增长耦合，不�
 allocator assertion，说明当前实现主要在 admission 阶段排队，而不是在 decode 阶段裁剪。
 后续需要在 256-token cache 上比较 token/page-aware reservation 的等待公平性，再决定是否
 扩展容量裁剪 telemetry 或策略。详见 `learning/experiments/082_tp4_kv_pressure_admission.md`。
+
+## 实验 083 结果
+
+在 256-token cache 和 16 个 128-token 输出请求的压力下，token/page-aware reservation 的
+吞吐为 88.99/90.14 tok/s，P90 TTFT 为 19.96/19.72 秒；差异只有约 1.30%。两组都没有
+capacity trim/deferred，decode batch 全为 1，说明 admission 先行串行化，A/B 没有命中公平
+性 cursor。保留 token 为默认、page-aware 为 opt-in；下一步构造可命中容量裁剪分支的确定性
+多候选 decode trace。详见 `learning/experiments/083_tp4_reservation_fairness_under_pressure.md`。
