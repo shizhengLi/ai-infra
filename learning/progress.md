@@ -685,3 +685,14 @@ token，比较 `page_size=8/16/32`。三组均 24/24 完成，`page_size=8/16/32
 budget-limited。与实验 080 的短输出结论不同，长 decode 下 page size=32 的 TPOT P99 最低，
 说明 page 粒度与持续 decode batch shape 相关，暂不修改默认 page size。详见
 `learning/experiments/081_tp4_long_decode_page_size.md`。
+
+## 实验 082 结果
+
+实验 082 将 TP4 Qwen3-32B-AWQ 的请求数提高到 16，在 `page_size=16` 下测试 1024-token
+和 256-token KV cache。1024-token cache 在 20/80 req/s 下吞吐为 380.87/392.95 tok/s，
+P90 TTFT 为 3261/3471 ms；256-token cache 在 80 req/s 下吞吐降至 89.96 tok/s，P90 TTFT
+升至 19770 ms，GPU 利用率 96.54%。两种容量下请求均全部完成，没有 allocator assertion，
+但 telemetry 的 `decode_capacity_trimmed/deferred` 均为 0：scheduler 在 decode fit guard
+之前通过 admission 排队，256-token 场景的 decode batch 全部退化为 1。该结果接受为容量
+backpressure 和排队 tail 的证据，不宣称裁剪分支收益；下一步做 256-token cache 下 token 与
+page-aware reservation 的公平性 A/B。详见 `learning/experiments/082_tp4_kv_pressure_admission.md`。

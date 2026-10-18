@@ -506,3 +506,12 @@ page size=8/16/32 的吞吐为 305.82/294.03/297.83 tok/s，P99 TPOT 为 38.81/4
 page 粒度与 decode batch shape、page 对齐和持续 KV 增长耦合，不能只用短请求结果改默认值。
 后续应扩大输出长度、到达率和 page pressure，并记录 allocator 碎片和 P99.9 延迟。详见
 `learning/experiments/081_tp4_long_decode_page_size.md`。
+
+## 实验 082 结果
+
+实验 082 用 16 个 128-token 输出请求制造 KV pressure。1024-token cache 在 20/80 req/s
+下仍保持约 381/393 tok/s，但 TTFT P90 约 3.26/3.47 秒；256-token cache 下吞吐降为
+89.96 tok/s、TTFT P90 为 19.77 秒、decode batch 全部为 1。两组都没有 capacity trim 或
+allocator assertion，说明当前实现主要在 admission 阶段排队，而不是在 decode 阶段裁剪。
+后续需要在 256-token cache 上比较 token/page-aware reservation 的等待公平性，再决定是否
+扩展容量裁剪 telemetry 或策略。详见 `learning/experiments/082_tp4_kv_pressure_admission.md`。
