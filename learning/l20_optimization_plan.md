@@ -67,6 +67,9 @@ multi-GPU throughput.
 
 ## Current execution point
 
+本节及其后早期实验段落保留为历史决策记录；截至实验 083 的有效状态、默认策略和 084-088
+后续计划以文档末尾的“2026-10 当前执行总览”为准。
+
 Experiments 000-015 completed environment validation, baseline measurement, focused optimization,
 parameter exploration, and candidate selection. Experiment 016 completed the main held-out
 evaluation. The active-only 2304-token candidate improved the global maximum TPOT from 13.32 to
@@ -523,3 +526,104 @@ allocator assertion，说明当前实现主要在 admission 阶段排队，而�
 capacity trim/deferred，decode batch 全为 1，说明 admission 先行串行化，A/B 没有命中公平
 性 cursor。保留 token 为默认、page-aware 为 opt-in；下一步构造可命中容量裁剪分支的确定性
 多候选 decode trace。详见 `learning/experiments/083_tp4_reservation_fairness_under_pressure.md`。
+
+## 2026-10 当前执行总览（实验 069-083）
+
+本节是当前计划的权威状态，早期章节保留为历史决策记录。实验 074 在
+`learning/progress.md` 中按用户要求位于 075 之前，本文件不再调整该顺序。
+
+### 已接受或保留为默认候选
+
+| 能力 | 实验/代码证据 | 当前决策 |
+| --- | --- | --- |
+| PyNCCL wheel runtime linker | 实验 079；TP4 Qwen3-32B-AWQ 在 L20 GPU 2/3/6/7 ready | 接受，默认 PyNCCL 可用；Gloo 仅做 CPU bootstrap |
+| decode admission safety guard | 实验 071/072；限页 overlap 无 allocator assertion | 接受 correctness 修复，不宣称吞吐收益 |
+| capacity round-robin + UID cursor | 实验 073/074/075/076；确定性选择 0/1/2 公平循环 | 接受为公平性基础设施，等待线上 trim-path 验证 |
+| FP8 W8A8 weight | 实验 053/055；Graph/TP4 性能与质量 gate 通过 | 作为 L20 Graph/TP4 显式候选，BF16 仍为 reference |
+| AWQ/INT4-Marlin | 实验 054/055；TP1/TP2 容量优势，质量 gate 风险 | capacity-first opt-in，不改默认 |
+
+### 条件性或 default-disabled 能力
+
+| 能力 | 证据 | 不进入默认的原因 |
+| --- | --- | --- |
+| page-aware reservation | 实验 078/079/083 | 特定 trim trace 安全收益，但 TP4/256 pressure 已被 admission 串行化；吞吐收益不足 |
+| page size 8/16/32 | 实验 080/081 | 短输出与长输出排序不同，未形成全局最优结论 |
+| L20 Graph shape policy | 实验 066 | padding 15.65% -> 1.48%，但低负载 P99 TPOT 有回退 |
+| tokenizer micro-batch wait | 实验 067 | CPU median 2.26x，但 1 ms wait 未通过低速率 TTFT gate |
+| FP8 KV cache fused/native path | 实验 061-064 | capacity 约 2x，但长上下文 TPOT/写 kernel/scale quality gate 未完成 |
+| safe retraction hysteresis | 实验 068-070 | 减少 thrashing，但多次重复未稳定改善 TTFT；保持 opt-in |
+
+### 实验 080-083 的统一解释
+
+这四个实验共同说明，page 和 reservation 不能脱离 admission 行为评价：
+
+- 实验 080 固定 128-token cache、输出 16，page size=16 吞吐最高；
+- 实验 081 固定 1024-token cache、输出 128，page size=8 吞吐最高，page size=32 TPOT P99
+  最低，排序发生变化；
+- 实验 082 将请求数提高到 16，256-token cache 下吞吐降到 89.96 tok/s、P90 TTFT 19.77 s，
+  但 capacity trim 仍为 0，说明 admission 先排队；
+- 实验 083 在同一压力下比较 token/page-aware，吞吐仅 88.99/90.14 tok/s，6160 个 decode
+  batch 全为 1，两个策略都没有命中公平性 cursor。
+
+因此当前系统的首要未知量不是“page-aware 是否平均更快”，而是怎样构造一个既有多个 decode
+候选、又只有部分候选的未来 page demand 能容纳的 trace，从而真正验证 073-076 的公平性实现。
+
+## 实验 084-088 计划
+
+### 实验 084：确定性 capacity trim/fairness 集成 trace
+
+目标是绕过 admission 直接串行化的问题，构造多个 running decode 请求的异构剩余 demand：
+例如容量剩余 3 page，候选 demand 为 2/1/1 page，且每一轮只允许 1-2 个请求进入 decode。
+需要同时覆盖请求完成、取消和新 UID 插入。
+
+验收：
+
+- 至少 9 个 round，UID 0/1/2 服务次数差异不超过 1；
+- deferred UID 的 wait rounds 单调累计，服务后清零；
+- capacity trim/deferred telemetry 实际大于 0；
+- 无 stale result、page table 不变量破坏或 allocator assertion；
+- token/page-aware 的选择结果可解释，测试固定 seed 可重复。
+
+### 实验 085：page-aware 在真实 pressure 下的边界矩阵
+
+固定 page size=16，组合 256/512/1024 token cache、128/512 output、20/80 req/s 和 8/16 请求。
+先用 token policy 建立 baseline，再只切换 page-aware。报告吞吐、P90/P99 TTFT、P99 TPOT、
+最大 pending、trim/deferred 次数、wait-round P99 和完成顺序。
+
+接受规则：只有在至少一个真实 trim-path workload 中 page-aware 同时满足容量安全、wait-round
+公平性改善、吞吐不低于 98% 和 P99 TTFT 不回退 5% 才考虑扩大 opt-in 范围；否则保留为
+安全优先策略。
+
+### 实验 086：Req 预分配 buffer 上游化
+
+把实验 060 的实现整理成独立变更：`Req` 初始化一次 `torch.empty(max_device_len)`，append
+只写入下一个位置并返回有效长度 view。补充 aborted request、capacity view、tokenizer 输出
+顺序和 4096/8192 output 的 CPU benchmark。
+
+验收是 CPU append wall-time、allocation 次数和 token identity；如果端到端 tok/s 不变，必须
+如实写成 CPU overhead/可扩展性 PR，不把 microbenchmark 结果包装成 serving 吞吐提升。
+
+### 实验 087：FP8 KV cache 最终 quality/performance gate
+
+在 Qwen3-32B TP4 上比较 BF16 KV 与 FP8 KV 的 4096/8192/16384 context、128/512 output。
+固定 scale calibration，分别测 capacity、P99 TPOT、写 kernel 时间、长上下文 token agreement
+和显存。只有 fused cast/store 真实降低端到端 TPOT 且质量 gate 通过，才继续做默认候选。
+
+### 实验 088：可审查的 upstream PR 拆分
+
+不要提交一个包含所有实验的“大优化 PR”。拆成：
+
+1. PyNCCL wheel linker + focused build/load test；
+2. telemetry schema 和 capacity wait-round tests；
+3. Req preallocated buffer；
+4. page-aware admission/fairness（依赖 084/085 结果）；
+5. Graph shape policy 或 FP8 KV（只有各自 gate 通过才提交）。
+
+每个 PR 都附最小复现、默认行为说明、L20 benchmark Markdown/JSON、回归测试和失败实验链接。
+
+## 当前停止条件
+
+在实验 084 未命中真实 capacity trim 分支前，不继续扩大 page-aware 默认范围；在实验 087
+质量/端到端 gate 未通过前，不把 FP8 KV 宣称为生产收益；在没有 Nsight 或可归因 profile 前，
+不重写 GEMM/attention CUDA kernel。这样可以保证项目叙事是 bottleneck-driven，而不是无止境
+调参。
