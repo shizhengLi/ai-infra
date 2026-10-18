@@ -455,6 +455,15 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 测试 120/120 通过。该改动只增强观测，不改变 admission 或 batch 快路径，下一步用真实线上
 裁剪事件验证最大等待轮数与 P99 TTFT。
 
+## 实验 077 结果
+
+在 L20 GPU 2 上将 Qwen3-4B-AWQ 的 KV cache 压到 `page_size=32`、`num_pages=4`（128 token），
+用真实 HTTP 请求做短请求和高并发 burst。两轮共 11 个请求全部完成，TTFT/TPOT SLO 均为 100%，
+没有 allocator assertion；P90 TTFT 分别为 123.29 ms 和 657.95 ms。4 个 telemetry trace
+没有产生 `decode_capacity_trimmed/deferred`，因为 admission 已先将活跃 decode batch 控制在
+可容纳范围内。该实验确认在线边界稳定性，并提供了“未命中裁剪分支”的证据；不能把它解释为
+等待轮数或吞吐收益。详见 `learning/experiments/077_online_wait_round_validation.md`。
+
 ## 实验 074 结果
 
 在 3 page 容量、请求 demand 为 2/1/1 的确定性模型中，round-robin 选择循环为

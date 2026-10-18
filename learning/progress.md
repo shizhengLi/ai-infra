@@ -627,6 +627,17 @@ fairness/correctness 修复，不宣称线上收益；下一步验证完成、�
 该实验接受为 telemetry/correctness 基础设施，不宣称性能收益；下一步在线统计真实裁剪事件的
 最大等待轮数和完成时间分布。详见 `learning/experiments/076_decode_wait_round_telemetry.md`。
 
+## 实验 077 结果
+
+实验 077 在 L20 GPU 2 上用 Qwen3-4B-AWQ、4 个 32-token page（总 KV 容量 128 token）做了
+两轮真实 HTTP 压力：3/3 短请求和 8/8 并发 burst 均完成，TTFT/TPOT SLO 均为 100%，没有
+allocator assertion 或进程异常退出。低并发 P90 TTFT 为 123.29 ms，高并发 P90 TTFT 为
+657.95 ms。telemetry 共记录 4 个 trace，但 `decode_capacity_trimmed` 和
+`decode_capacity_deferred` 都是 0；selected trace 显示 admission 在 `_fit_decode_batch`
+之前已将活跃 decode batch 限制在可容纳范围内。因此本实验接受为在线 correctness/boundary
+证据，不宣称等待轮数 telemetry 已在线命中或带来性能收益。详见
+`learning/experiments/077_online_wait_round_validation.md`。
+
 ## 实验 074 结果
 
 实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
