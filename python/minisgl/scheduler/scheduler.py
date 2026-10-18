@@ -142,6 +142,8 @@ class Scheduler(SchedulerIOMixin):
         self._pipeline_batch_ids: dict[int, int] = {}
         self._next_pipeline_batch_id = 0
         self._decode_capacity_cursor_uid: int | None = None
+        self._decode_capacity_wait_rounds: dict[int, int] = {}
+        self._last_decode_capacity_wait_rounds: dict[int, int] = {}
         self.decode_result_before_prefill = config.decode_result_before_prefill
         if config.decode_graph_tail_prefill_batch_size < 0:
             raise ValueError("decode_graph_tail_prefill_batch_size must be non-negative")
@@ -475,13 +477,24 @@ class Scheduler(SchedulerIOMixin):
                     }
         if batch is not None and batch.is_decode:
             requested_decode_batch_size = batch.size
+            requested_decode_uids = [req.uid for req in batch.reqs]
             batch = self._fit_decode_batch(batch)
             if batch is not None and batch.size < requested_decode_batch_size:
+                selected_uids = {req.uid for req in batch.reqs}
                 self._record_pipeline_event(
                     "decode_capacity_trimmed",
                     batch,
                     requested_batch_size=requested_decode_batch_size,
                     selected_batch_size=batch.size,
+                    deferred_uids=[uid for uid in requested_decode_uids if uid not in selected_uids],
+                    selected_wait_rounds=self._last_decode_capacity_wait_rounds,
+                )
+            elif batch is None and self.prefill_telemetry_enabled:
+                self._record_pipeline_event(
+                    "decode_capacity_deferred",
+                    requested_batch_size=requested_decode_batch_size,
+                    deferred_uids=requested_decode_uids,
+                    wait_rounds=self._decode_capacity_wait_rounds,
                 )
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
@@ -509,6 +522,8 @@ class Scheduler(SchedulerIOMixin):
                 (index for index, req in enumerate(batch.reqs) if req.uid >= cursor_uid),
                 0,
             )
+        wait_state = getattr(self, "_decode_capacity_wait_rounds", {})
+        wait_rounds = {req.uid: wait_state.get(req.uid, 0) + 1 for req in batch.reqs}
         selected: list[Req] = []
         selected_indices: list[int] = []
         for offset in range(request_count):
@@ -519,7 +534,18 @@ class Scheduler(SchedulerIOMixin):
                 selected.append(req)
                 selected_indices.append(index)
         if not selected:
+            self._last_decode_capacity_wait_rounds = {}
+            self._decode_capacity_wait_rounds = wait_rounds
             return None
+        selected_uids = {req.uid for req in selected}
+        self._last_decode_capacity_wait_rounds = {
+            uid: wait_rounds[uid] for uid in selected_uids
+        }
+        self._decode_capacity_wait_rounds = {
+            req.uid: wait_rounds[req.uid]
+            for req in batch.reqs
+            if req.uid not in selected_uids
+        }
         next_index = (selected_indices[-1] + 1) % request_count
         self._decode_capacity_cursor_uid = batch.reqs[next_index].uid
         return Batch(reqs=selected, phase="decode")

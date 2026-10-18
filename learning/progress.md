@@ -619,6 +619,14 @@ batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 
 fairness/correctness 修复，不宣称线上收益；下一步验证完成、取消和新 UID 交错时的在线等待轮数。
 详见 `learning/experiments/075_dynamic_decode_cursor.md`。
 
+## 实验 076 结果
+
+实验 076 为容量受限 decode 增加等待轮数 telemetry。单 slot、UID 0/1/2 的三轮确定性 trace
+记录为：UID 0 首轮服务；UID 1 第二轮以等待 2 轮被服务；UID 2 第三轮以等待 3 轮被服务，
+未选中 UID 的计数持续保留。新增测试后 focused tests 14/14，完整核心测试 120/120 通过。
+该实验接受为 telemetry/correctness 基础设施，不宣称性能收益；下一步在线统计真实裁剪事件的
+最大等待轮数和完成时间分布。详见 `learning/experiments/076_decode_wait_round_telemetry.md`。
+
 ## 实验 074 结果
 
 实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin

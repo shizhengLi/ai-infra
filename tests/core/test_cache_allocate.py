@@ -129,6 +129,24 @@ class TestAllocateEvictPageAlignment:
         assert second is not None
         assert [req.uid for req in second.reqs] == [2, 3]
 
+    def test_scheduler_tracks_capacity_wait_rounds(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = SimpleNamespace(
+            can_allocate_paged=lambda reqs: len(reqs) <= 1
+        )
+        reqs = [SimpleNamespace(uid=index) for index in range(3)]
+
+        first = scheduler._fit_decode_batch(core.Batch(reqs=reqs, phase="decode"))
+        assert first is not None
+        assert scheduler._decode_capacity_wait_rounds == {1: 1, 2: 1}
+        assert scheduler._last_decode_capacity_wait_rounds == {0: 1}
+
+        second = scheduler._fit_decode_batch(core.Batch(reqs=reqs, phase="decode"))
+        assert second is not None
+        assert [req.uid for req in second.reqs] == [1]
+        assert scheduler._decode_capacity_wait_rounds == {2: 2, 0: 1}
+        assert scheduler._last_decode_capacity_wait_rounds == {1: 2}
+
     def test_scheduler_trims_against_real_cache_capacity(self):
         cm = _make_cache_manager(num_pages=4, page_size=1)
         cm._allocate(3)

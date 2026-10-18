@@ -448,6 +448,13 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 `[0,1,2,3] -> [0,1]` 后移除 0，新集合 `[1,2,3]` 正确选择 `[2,3]`。核心测试 119/119 通过，
 完整 batch 快路径和容量参数不变。下一步需要动态在线 trace 验证新 UID、取消请求和尾延迟。
 
+## 实验 076 结果
+
+实验 076 增加 `_decode_capacity_wait_rounds` 与裁剪事件字段，能够记录 deferred UID 的累计
+等待轮数和 selected UID 的服务前等待轮数。确定性单 slot trace 正确呈现 1/2/3 轮等待；核心
+测试 120/120 通过。该改动只增强观测，不改变 admission 或 batch 快路径，下一步用真实线上
+裁剪事件验证最大等待轮数与 P99 TTFT。
+
 ## 实验 074 结果
 
 在 3 page 容量、请求 demand 为 2/1/1 的确定性模型中，round-robin 选择循环为
