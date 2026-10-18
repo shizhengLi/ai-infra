@@ -417,3 +417,12 @@ keep the wait default at 0 ms; do not claim a low-rate TTFT win. See
 在 4096/8192 pages 均触发 cache allocator 的 `0 evictable` 断言，说明提交但尚未完成的
 pipeline batch 的未来 KV reservation 没有被 admission 完整建模。下一实验优先修复这个安全
 不变量，再重新评估 overlap 下的性能。
+
+## 实验 071 结果
+
+实验 070 暴露的 overlap pipeline allocator assertion 已通过 decode admission guard 修复：
+`CacheManager.can_allocate_paged` 读取当前可见 free/evictable 容量，scheduler 在准备 batch 前
+裁剪未来 page demand 超限的 decode 请求，并让 telemetry 记录实际执行的 batch。focused tests
+24/24 和完整 `tests/core` 通过；Qwen3-4B-AWQ 单卡 L20 功能冒烟 6/6 请求完成、SLO 100%，无
+allocator assertion。该修复的价值是保持 cache allocator 安全不变量，尚无端到端性能收益证据，
+默认仍不启用额外激进策略。下一步是 TP4 限页 overlap 压力和 starvation/fairness 评估。

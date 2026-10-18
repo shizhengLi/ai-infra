@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import pytest
 import torch
+from types import SimpleNamespace
 
 import minisgl.core as core
 from minisgl.scheduler.cache import CacheManager
+from minisgl.scheduler.scheduler import Scheduler
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +59,27 @@ def _assert_no_overlap(pages: torch.Tensor, page_size: int):
 
 class TestAllocateEvictPageAlignment:
     """Tests for _allocate handling eviction with page_size > 1."""
+
+    def test_can_allocate_paged_uses_visible_capacity(self):
+        cm = _make_cache_manager(num_pages=2, page_size=1)
+        req = SimpleNamespace(cached_len=0, device_len=1)
+        assert cm.can_allocate_paged([req, req]) is True
+        cm._allocate(1)
+        assert cm.can_allocate_paged([req, req]) is False
+        assert cm.can_allocate_paged([req]) is True
+
+    def test_scheduler_trims_decode_batch_to_visible_capacity(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = SimpleNamespace(
+            can_allocate_paged=lambda reqs: len(reqs) <= 2
+        )
+        reqs = [SimpleNamespace(uid=index) for index in range(3)]
+        batch = core.Batch(reqs=reqs, phase="decode")
+
+        trimmed = scheduler._fit_decode_batch(batch)
+
+        assert trimmed is not None
+        assert [req.uid for req in trimmed.reqs] == [0, 1]
 
     def test_allocate_after_evict_returns_page_aligned(self):
         """Allocated pages after eviction must be page-aligned."""

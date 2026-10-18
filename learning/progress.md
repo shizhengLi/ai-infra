@@ -581,3 +581,13 @@ cooldown=4、pending gate=2048 将 retraction 从 849 次降到 144 次（-83.0%
 `Cannot satisfy ... cache tokens with only 0 evictable` allocator 断言；这些运行没有计入有效
 benchmark。该发现把下一步重点转为 overlap pipeline 的 in-flight KV reservation/admission
 安全修复。详见 `learning/experiments/070_retraction_stability_overlap_boundary.md`。
+
+## 实验 071 结果
+
+实验 071 在 decode batch 进入 `_prepare_batch` 前增加可见 KV 容量保护：按每个请求的
+`cached_len/device_len` 计算下一步需要的 page 数，超出当前 free slot 与 evictable radix 容量
+时按顺序裁剪 batch。新增容量判断和 scheduler 裁剪测试后，相关测试 24/24 通过；完整核心
+测试也通过。Qwen3-4B-AWQ 单卡 L20 在线冒烟完成 6/6 请求，TTFT/TPOT SLO 均 100%，没有再
+出现 allocator assertion；telemetry 记录 2 次 safe retraction、8 个 token。该结果只接受
+为 overlap 崩溃防护的 correctness 修复，不宣称吞吐提升，后续需在 4 卡 TP4 限页压力下验证
+裁剪比例、公平性和 tail latency。详见 `learning/experiments/071_overlap_decode_capacity_guard.md`。

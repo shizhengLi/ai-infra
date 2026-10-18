@@ -275,6 +275,21 @@ class CacheManager:
     def available_size(self) -> int:
         return self.prefix_cache.size_info.evictable_size + len(self.free_slots) * self.page_size
 
+    def can_allocate_paged(self, reqs: List[Req]) -> bool:
+        """Return whether the next paged allocation can fit without assertion.
+
+        Overlap scheduling may select a new decode batch before the previous
+        batch's result has been processed.  The free slots and evictable radix
+        pages are the authoritative capacity at that boundary; checking them
+        here lets the scheduler defer only the requests that do not fit.
+        """
+        needed_pages = 0
+        for req in reqs:
+            first_page = div_ceil(req.cached_len, self.page_size)
+            last_page = div_ceil(req.device_len, self.page_size)
+            needed_pages += max(0, last_page - first_page)
+        return needed_pages * self.page_size <= self.available_size
+
     def lock(self, handle: BaseCacheHandle) -> None:
         self.prefix_cache.lock_handle(handle, unlock=False)
 

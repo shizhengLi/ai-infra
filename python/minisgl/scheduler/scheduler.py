@@ -472,6 +472,8 @@ class Scheduler(SchedulerIOMixin):
                         "max_sequence_tokens": max(req.device_len for req in batch.reqs),
                         "active_decode_requests": active_decode_requests,
                     }
+        if batch is not None and batch.is_decode:
+            batch = self._fit_decode_batch(batch)
         if batch is not None:
             self.schedule_policy.update(is_prefill=batch.is_prefill)
             if self.prefill_telemetry_enabled and self._is_primary_rank:
@@ -484,6 +486,19 @@ class Scheduler(SchedulerIOMixin):
                     details.update(metadata)
                 self._record_pipeline_event("selected", batch, **details)
         return self._prepare_batch(batch) if batch else None
+
+    def _fit_decode_batch(self, batch: Batch) -> Batch | None:
+        """Trim a decode batch to the cache capacity visible at this boundary."""
+        if self.cache_manager.can_allocate_paged(batch.reqs):
+            return batch
+        selected: list[Req] = []
+        for req in batch.reqs:
+            candidate = selected + [req]
+            if self.cache_manager.can_allocate_paged(candidate):
+                selected.append(req)
+        if not selected:
+            return None
+        return Batch(reqs=selected, phase="decode")
 
     def _flush_prefill_telemetry(self, reason: str) -> None:
         if not self._is_primary_rank or self.prefill_telemetry_path is None:
