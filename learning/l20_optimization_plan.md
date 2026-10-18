@@ -487,3 +487,13 @@ PyNCCL 链接修复接受，但 TP4 admission 已提前消化页压力，不能�
 `[0,1] -> [2,0] -> [1,2]`，避免重 page 请求和轻 page 请求互相饥饿。测试通过，默认完整
 batch 快路径不变；该实验只接受为调度公平性证据，下一步需要动态请求集合的在线等待轮数和
 tail latency 验证。
+
+## 实验 080 结果
+
+实验 080 将总 KV cache 容量固定为 128 token，在 TP4 Qwen3-32B-AWQ 上比较 page size
+8/16/32。三组均完成 24/24 请求且没有 allocator assertion；page size=8/16/32 的吞吐
+分别为 132.04、136.63、131.74 tok/s，P99 TPOT 分别为 36.58、35.01、80.04 ms。遥测中
+没有容量裁剪或回收事件，说明 admission 先于 decode fit guard 控制了活跃集合。当前证据
+支持保留 16 作为基线，不支持把更小或更大的 page size 改成默认值；后续应在长输出、高到达率
+和更大 page 数下验证内部碎片及 P99/P99.9 尾延迟。详见
+`learning/experiments/080_tp4_page_size_sensitivity.md`。

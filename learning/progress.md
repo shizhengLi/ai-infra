@@ -611,6 +611,14 @@ batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 
 该实验接受为 fairness/correctness 修复，不宣称吞吐收益；下一步在线记录真实裁剪下的 UID 等待
 轮数和 P99 TTFT。详见 `learning/experiments/073_decode_capacity_fairness.md`。
 
+## 实验 074 结果
+
+实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
+连续六轮选择为 `[0,1]、[2,0]、[1,2]` 重复，三个 UID 都持续获得服务；新增单测后
+`tests/core/test_cache_allocate.py` 通过 12/12。该结果确认公平策略对混合 page demand 仍有效，
+但只是确定性 scheduler 实验，尚无线上吞吐或 tail latency 收益证据。详见
+`learning/experiments/074_mixed_page_demand_fairness.md`。
+
 ## 实验 075 结果
 
 实验 075 修复了动态请求集合导致的 cursor 下标漂移。旧实现先在 `[0,1,2,3]` 选择 `[0,1]`，
@@ -658,10 +666,12 @@ collective 仍走 PyNCCL/NCCL。随后在 8 个 16-token page 的极小 cache �
 均为 0，说明 TP4 admission 已在 guard 前限制活跃集合。该结果接受 PyNCCL 链接修复，不支持
 修改 TP4 默认 reservation 策略。详见 `learning/experiments/079_pynccl_tp4_reservation_validation.md`。
 
-## 实验 074 结果
+## 实验 080 结果
 
-实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
-连续六轮选择为 `[0,1]、[2,0]、[1,2]` 重复，三个 UID 都持续获得服务；新增单测后
-`tests/core/test_cache_allocate.py` 通过 12/12。该结果确认公平策略对混合 page demand 仍有效，
-但只是确定性 scheduler 实验，尚无线上吞吐或 tail latency 收益证据。详见
-`learning/experiments/074_mixed_page_demand_fairness.md`。
+实验 080 在 L20 GPU 2/3/6/7 上运行 Qwen3-32B-AWQ TP4，固定总 KV cache 容量为 128 token，
+比较 `page_size=8/16/32`。`page_size=8` 吞吐 132.04±6.64 tok/s、P90 TTFT 403.79 ms、
+P99 TPOT 36.58 ms；`page_size=16` 复用实验 079 基线 136.63±3.90 tok/s、511.49 ms、
+35.01 ms；`page_size=32` 为 131.74±2.13 tok/s、416.96 ms、80.04 ms。三组均 24/24
+完成，telemetry 均无 `decode_capacity_trimmed/deferred` 或 retraction；page size=32 有 6
+次 prefill budget-limited。结果说明当前短请求 workload 下没有足够证据修改默认 page size，
+而大 page 的 decode 尾延迟需要重点关注。详见 `learning/experiments/080_tp4_page_size_sensitivity.md`。
