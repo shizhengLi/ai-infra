@@ -441,3 +441,10 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 （9/0/0）变为 0/1/2 各 3 次；真实 cache occupancy 边界仍严格遵守可见 page 容量。完整核心
 测试 117/117 通过。该改动解决容量受限时的公平性风险，默认参数和完整 batch 快路径不变，
 没有端到端吞吐收益证据；后续需要在线裁剪 trace 验证等待轮数和 tail latency。
+
+## 实验 074 结果
+
+在 3 page 容量、请求 demand 为 2/1/1 的确定性模型中，round-robin 选择循环为
+`[0,1] -> [2,0] -> [1,2]`，避免重 page 请求和轻 page 请求互相饥饿。测试通过，默认完整
+batch 快路径不变；该实验只接受为调度公平性证据，下一步需要动态请求集合的在线等待轮数和
+tail latency 验证。

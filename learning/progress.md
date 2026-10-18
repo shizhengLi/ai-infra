@@ -610,3 +610,11 @@ batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 
 选择 1 个请求且不改变 cache 可见容量。focused tests 34/34、完整 `tests/core` 117/117 通过。
 该实验接受为 fairness/correctness 修复，不宣称吞吐收益；下一步在线记录真实裁剪下的 UID 等待
 轮数和 P99 TTFT。详见 `learning/experiments/073_decode_capacity_fairness.md`。
+
+## 实验 074 结果
+
+实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
+连续六轮选择为 `[0,1]、[2,0]、[1,2]` 重复，三个 UID 都持续获得服务；新增单测后
+`tests/core/test_cache_allocate.py` 通过 12/12。该结果确认公平策略对混合 page demand 仍有效，
+但只是确定性 scheduler 实验，尚无线上吞吐或 tail latency 收益证据。详见
+`learning/experiments/074_mixed_page_demand_fairness.md`。

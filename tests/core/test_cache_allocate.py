@@ -95,6 +95,24 @@ class TestAllocateEvictPageAlignment:
 
         assert selected_uids == [0, 1, 2, 0, 1, 2, 0, 1, 2]
 
+    def test_scheduler_round_robin_handles_mixed_page_demand(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = SimpleNamespace(
+            can_allocate_paged=lambda reqs: sum(req.demand for req in reqs) <= 3
+        )
+        reqs = [
+            SimpleNamespace(uid=0, demand=2),
+            SimpleNamespace(uid=1, demand=1),
+            SimpleNamespace(uid=2, demand=1),
+        ]
+        selected = []
+        for _ in range(3):
+            batch = scheduler._fit_decode_batch(core.Batch(reqs=reqs, phase="decode"))
+            assert batch is not None
+            selected.append([req.uid for req in batch.reqs])
+
+        assert selected == [[0, 1], [2, 0], [1, 2]]
+
     def test_scheduler_trims_against_real_cache_capacity(self):
         cm = _make_cache_manager(num_pages=4, page_size=1)
         cm._allocate(3)
