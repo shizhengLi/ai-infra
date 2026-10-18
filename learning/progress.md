@@ -611,6 +611,14 @@ batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 
 该实验接受为 fairness/correctness 修复，不宣称吞吐收益；下一步在线记录真实裁剪下的 UID 等待
 轮数和 P99 TTFT。详见 `learning/experiments/073_decode_capacity_fairness.md`。
 
+## 实验 075 结果
+
+实验 075 修复了动态请求集合导致的 cursor 下标漂移。旧实现先在 `[0,1,2,3]` 选择 `[0,1]`，
+移除 UID 0 后会错误选择 `[3,1]`、跳过 UID 2；新实现保存下一个 UID，第二轮选择稳定为 `[2,3]`。
+新增动态移除测试后 focused tests 13/13，完整 `tests/core` 119/119 通过。该实验接受为
+fairness/correctness 修复，不宣称线上收益；下一步验证完成、取消和新 UID 交错时的在线等待轮数。
+详见 `learning/experiments/075_dynamic_decode_cursor.md`。
+
 ## 实验 074 结果
 
 实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin

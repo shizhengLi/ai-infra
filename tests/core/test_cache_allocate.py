@@ -113,6 +113,22 @@ class TestAllocateEvictPageAlignment:
 
         assert selected == [[0, 1], [2, 0], [1, 2]]
 
+    def test_scheduler_cursor_survives_request_removal(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = SimpleNamespace(
+            can_allocate_paged=lambda reqs: len(reqs) <= 2
+        )
+        initial = [SimpleNamespace(uid=index) for index in range(4)]
+        first = scheduler._fit_decode_batch(core.Batch(reqs=initial, phase="decode"))
+        assert first is not None
+        assert [req.uid for req in first.reqs] == [0, 1]
+
+        remaining = [initial[1], initial[2], initial[3]]
+        second = scheduler._fit_decode_batch(core.Batch(reqs=remaining, phase="decode"))
+
+        assert second is not None
+        assert [req.uid for req in second.reqs] == [2, 3]
+
     def test_scheduler_trims_against_real_cache_capacity(self):
         cm = _make_cache_manager(num_pages=4, page_size=1)
         cm._allocate(3)

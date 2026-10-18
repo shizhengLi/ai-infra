@@ -141,7 +141,7 @@ class Scheduler(SchedulerIOMixin):
         self._pipeline_events: list[dict[str, object]] = []
         self._pipeline_batch_ids: dict[int, int] = {}
         self._next_pipeline_batch_id = 0
-        self._decode_capacity_cursor = 0
+        self._decode_capacity_cursor_uid: int | None = None
         self.decode_result_before_prefill = config.decode_result_before_prefill
         if config.decode_graph_tail_prefill_batch_size < 0:
             raise ValueError("decode_graph_tail_prefill_batch_size must be non-negative")
@@ -501,7 +501,14 @@ class Scheduler(SchedulerIOMixin):
         if self.cache_manager.can_allocate_paged(batch.reqs):
             return batch
         request_count = len(batch.reqs)
-        start = getattr(self, "_decode_capacity_cursor", 0) % request_count
+        cursor_uid = getattr(self, "_decode_capacity_cursor_uid", None)
+        if cursor_uid is None:
+            start = 0
+        else:
+            start = next(
+                (index for index, req in enumerate(batch.reqs) if req.uid >= cursor_uid),
+                0,
+            )
         selected: list[Req] = []
         selected_indices: list[int] = []
         for offset in range(request_count):
@@ -513,7 +520,8 @@ class Scheduler(SchedulerIOMixin):
                 selected_indices.append(index)
         if not selected:
             return None
-        self._decode_capacity_cursor = (selected_indices[-1] + 1) % request_count
+        next_index = (selected_indices[-1] + 1) % request_count
+        self._decode_capacity_cursor_uid = batch.reqs[next_index].uid
         return Batch(reqs=selected, phase="decode")
 
     def _flush_prefill_telemetry(self, reason: str) -> None:
