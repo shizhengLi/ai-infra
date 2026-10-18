@@ -675,3 +675,13 @@ P99 TPOT 36.58 ms；`page_size=16` 复用实验 079 基线 136.63±3.90 tok/s、
 完成，telemetry 均无 `decode_capacity_trimmed/deferred` 或 retraction；page size=32 有 6
 次 prefill budget-limited。结果说明当前短请求 workload 下没有足够证据修改默认 page size，
 而大 page 的 decode 尾延迟需要重点关注。详见 `learning/experiments/080_tp4_page_size_sensitivity.md`。
+
+## 实验 081 结果
+
+实验 081 将输出长度提高到 128 token，并把 TP4 Qwen3-32B-AWQ 的总 KV cache 固定为 1024
+token，比较 `page_size=8/16/32`。三组均 24/24 完成，`page_size=8/16/32` 吞吐分别为
+305.82±3.72、294.03±5.55、297.83±9.71 tok/s；P99 TPOT 分别为 38.81、44.97、33.98 ms。
+三组均无 allocator assertion、容量裁剪或 retraction，`page_size=16` 产生 11 次 prefill
+budget-limited。与实验 080 的短输出结论不同，长 decode 下 page size=32 的 TPOT P99 最低，
+说明 page 粒度与持续 decode batch shape 相关，暂不修改默认 page size。详见
+`learning/experiments/081_tp4_long_decode_page_size.md`。

@@ -497,3 +497,12 @@ tail latency 验证。
 支持保留 16 作为基线，不支持把更小或更大的 page size 改成默认值；后续应在长输出、高到达率
 和更大 page 数下验证内部碎片及 P99/P99.9 尾延迟。详见
 `learning/experiments/080_tp4_page_size_sensitivity.md`。
+
+## 实验 081 结果
+
+实验 081 在固定 1024-token KV cache 下把输出长度提高到 128 token，重新比较 page size。
+page size=8/16/32 的吞吐为 305.82/294.03/297.83 tok/s，P99 TPOT 为 38.81/44.97/33.98 ms；
+没有容量裁剪、回收或请求失败。长 decode 的排序不同于实验 080 的 16-token workload，说明
+page 粒度与 decode batch shape、page 对齐和持续 KV 增长耦合，不能只用短请求结果改默认值。
+后续应扩大输出长度、到达率和 page pressure，并记录 allocator 碎片和 P99.9 延迟。详见
+`learning/experiments/081_tp4_long_decode_page_size.md`。
