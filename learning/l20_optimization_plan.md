@@ -601,6 +601,19 @@ cache。128-token 点使用 output=96（输入和聊天模板约占 25 token，o
 page-aware 只能作为安全优先的 opt-in。完整记录见
 `learning/experiments/085_page_aware_pressure_boundary_matrix.md`。
 
+### 实验 085b 已完成：定向多候选压力仍被 admission guard 吸收
+
+实验 085b 使用 1024-token cache、`page_size=16`、6 请求、实际 input=25/output=136 和
+4 个 tokenizer worker，尝试让 token policy 的 token 估计接近 page capacity。token/page-aware
+吞吐为 237.69/233.60 tok/s，P90 TTFT 为 1965/2013 ms；最大 decode batch 都为 5，trim 和
+deferred 都为 0。512-token/5 请求的 output=83/75 定向试探同样无 trim。
+
+根因是 `DecodeManager.inflight_tokens` 为每个 active decode request 保留一个 page 边界安全
+预算，prefill admission 在 `_fit_decode_batch` 之前就拒绝了会导致 page 超额的第 N 个请求。
+因此提高 arrival rate 或 tokenizer 并发只能增加 pending queue，不能自然触发 capacity trim。
+085b 接受为 admission guard 的边界证据，不接受 page-aware 性能 gate；真实 fairness cursor
+仍需要 overlap/page allocation race 或 deterministic scheduler integration test 才能验证。
+
 ## 实验 084-088 计划
 
 ### 实验 084：确定性 capacity trim/fairness 集成 trace（已完成）
@@ -630,6 +643,10 @@ page-aware 只能作为安全优先的 opt-in。完整记录见
 阶段 1 的 128/256/512-token pilot 均未命中真实 trim/deferred，故尚未满足上述接受规则。
 若继续 page-aware 主线，085b 优先采用异构 output/input 和受限并发候选；若转向独立 PR，
 可先做 086，但必须把“085b 尚未通过”保留为 page-aware PR 的明确前置条件。
+
+085b 已完成但仍未命中真实 trim；不再通过简单 arrival-rate sweep 继续消耗 L20 时间。若
+继续 page-aware 主线，应先设计 overlap/page allocation race 的最小 reproducer；否则当前
+路线进入实验 086，page-aware 的真实 trim gate 保留为后续独立前置条件。
 
 ### 实验 086：Req 预分配 buffer 上游化
 

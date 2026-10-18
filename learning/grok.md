@@ -118,6 +118,12 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
   `decode_capacity_trimmed/deferred` 都为 0，256-token 历史三次重复也全部 decode batch=1。
   结论是 admission 排队掩盖了 decode trim，page-aware 仍没有真实线上 fairness 证据，
   不修改默认策略。该负结果比挑选 128-token 单次 +1.80% 更重要。
+- 实验 085b：使用 1024-token cache、6 请求、实际 input=25/output=136、4 个 tokenizer
+  worker 定向制造多 decode candidate。token/page-aware throughput 为 237.69/233.60 tok/s，
+  最大 decode batch 都是 5，trim/deferred 都为 0；512-token 的两个更小试探也没有 trim。
+  根因是 `DecodeManager.inflight_tokens` 的 page 边界安全预算在 `_fit_decode_batch` 之前
+  拦截了超容量候选。这个结果证明提高 arrival rate 不能绕过 admission guard，后续应验证
+  overlap/page allocation race，而不是继续重复普通 A/B。
 
 ## 当前默认决策
 
@@ -159,8 +165,8 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 
 ## 下一阶段路线
 
-1. 实验 085b：增加异构 output/input、并发候选或受限 `max_running_req`，让真实 L20 workload
-   命中 `decode_capacity_trimmed/deferred`，再决定 page-aware 是否有 PR 级证据。
+1. 实验 085c（条件性）：只做 overlap/page allocation race 的最小 reproducer；不再靠提高
+   arrival rate 反复 sweep。若仍无法命中真实 trim，接受 deterministic integration 证据即可。
 2. 实验 086：把 `Req` 预分配 buffer 和 append allocation telemetry 整理为独立上游 PR，
    用长输出 CPU benchmark 证明收益边界。
 3. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，

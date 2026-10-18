@@ -733,3 +733,18 @@ admission 排队，尚未自然命中实验 084 的多候选 decode trim 分支�
 工具链和负证据记录，不改变 `token` 默认策略，page-aware 继续 opt-in。下一步应先做 085b
 异构请求/并发候选压力以命中真实 trim，或转入实验 086 Req 预分配 buffer。详见
 `learning/experiments/085_page_aware_pressure_boundary_matrix.md`。
+
+## 实验 085b 结果
+
+实验 085b 根据 admission 公式定向构造多请求 decode candidate：L20 TP4、1024-token KV
+cache、`page_size=16`、6 请求、实际 input=25、output=136、4 个 tokenizer worker。token
+与 page-aware 使用同一 seed=8500088。token throughput 为 237.69 tok/s，page-aware 为
+233.60 tok/s；P90 TTFT 为 1965/2013 ms，P99 TPOT 为 42.73/43.67 ms。两组 6/6 完成、
+SLO=100%，但最大 decode batch 都只有 5，`decode_capacity_trimmed/deferred` 都是 0。
+
+512-token cache 下 5 请求 output=83/75 的定向试探也分别只形成最大 batch=4，trim/deferred
+仍为 0。结论是 `DecodeManager.inflight_tokens` 的每请求 page 边界安全预算在 `_fit_decode_batch`
+之前吸收了压力；单纯提高 arrival rate 不能构造真实 trim。085b 接受为 admission guard 边界
+和负证据，不修改默认策略。后续不再盲目扩大 page-aware A/B，应转向 overlap/page allocation
+边界验证，或推进实验 086 的独立 Req buffer PR。详见
+`learning/experiments/085b_targeted_trim_candidate_pressure.md`。
