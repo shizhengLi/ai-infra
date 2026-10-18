@@ -141,6 +141,7 @@ class Scheduler(SchedulerIOMixin):
         self._pipeline_events: list[dict[str, object]] = []
         self._pipeline_batch_ids: dict[int, int] = {}
         self._next_pipeline_batch_id = 0
+        self._decode_capacity_cursor = 0
         self.decode_result_before_prefill = config.decode_result_before_prefill
         if config.decode_graph_tail_prefill_batch_size < 0:
             raise ValueError("decode_graph_tail_prefill_batch_size must be non-negative")
@@ -499,13 +500,20 @@ class Scheduler(SchedulerIOMixin):
         """Trim a decode batch to the cache capacity visible at this boundary."""
         if self.cache_manager.can_allocate_paged(batch.reqs):
             return batch
+        request_count = len(batch.reqs)
+        start = getattr(self, "_decode_capacity_cursor", 0) % request_count
         selected: list[Req] = []
-        for req in batch.reqs:
+        selected_indices: list[int] = []
+        for offset in range(request_count):
+            index = (start + offset) % request_count
+            req = batch.reqs[index]
             candidate = selected + [req]
             if self.cache_manager.can_allocate_paged(candidate):
                 selected.append(req)
+                selected_indices.append(index)
         if not selected:
             return None
+        self._decode_capacity_cursor = (selected_indices[-1] + 1) % request_count
         return Batch(reqs=selected, phase="decode")
 
     def _flush_prefill_telemetry(self, reason: str) -> None:

@@ -434,3 +434,10 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 19.71 秒，证明小 cache 下 tail queueing 已成为主要问题。新增容量裁剪 telemetry 在两轮均为
 0 次，最大 decode batch 为 3，因此实验没有证明 `_fit_decode_batch` 在真实线上被触发；不能把
 稳定性结果解释为性能提升。下一步转为确定性 cache occupancy/fairness 边界测试。
+
+## 实验 073 结果
+
+实验 073 将容量裁剪从固定前缀改为 round-robin 起点。确定性单 slot 9 轮选择从 UID 0 独占
+（9/0/0）变为 0/1/2 各 3 次；真实 cache occupancy 边界仍严格遵守可见 page 容量。完整核心
+测试 117/117 通过。该改动解决容量受限时的公平性风险，默认参数和完整 batch 快路径不变，
+没有端到端吞吐收益证据；后续需要在线裁剪 trace 验证等待轮数和 tail latency。

@@ -601,3 +601,12 @@ assertion 或请求丢失；长 burst 的 P90/P99 TTFT 达到 19.71/21.80 秒，
 batch 只有 3，说明 admission/retraction 已在 guard 之前限制了活跃 batch，本实验没有真实命中
 071 的裁剪分支。该结果接受为 TP4 稳定性证据，不宣称性能收益；下一步做确定性小 cache 边界
 测试和 starvation 检查。详见 `learning/experiments/072_tp4_overlap_capacity_pressure.md`。
+
+## 实验 073 结果
+
+实验 073 验证并修复了容量裁剪的 UID 饥饿问题。原来的固定前缀策略在只能容纳 1 个请求时，
+9 轮全部选择 UID 0（9/0/0）；加入 `_decode_capacity_cursor` 后选择序列变为
+0/1/2 循环，9 轮计数为 3/3/3。真实 `CacheManager` 预占 3/4 page 的边界测试也确认只
+选择 1 个请求且不改变 cache 可见容量。focused tests 34/34、完整 `tests/core` 117/117 通过。
+该实验接受为 fairness/correctness 修复，不宣称吞吐收益；下一步在线记录真实裁剪下的 UID 等待
+轮数和 P99 TTFT。详见 `learning/experiments/073_decode_capacity_fairness.md`。

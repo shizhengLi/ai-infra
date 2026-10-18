@@ -81,6 +81,33 @@ class TestAllocateEvictPageAlignment:
         assert trimmed is not None
         assert [req.uid for req in trimmed.reqs] == [0, 1]
 
+    def test_scheduler_round_robin_avoids_decode_starvation(self):
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = SimpleNamespace(
+            can_allocate_paged=lambda reqs: len(reqs) <= 1
+        )
+        reqs = [SimpleNamespace(uid=index) for index in range(3)]
+        selected_uids = []
+        for _ in range(9):
+            batch = scheduler._fit_decode_batch(core.Batch(reqs=reqs, phase="decode"))
+            assert batch is not None
+            selected_uids.append(batch.reqs[0].uid)
+
+        assert selected_uids == [0, 1, 2, 0, 1, 2, 0, 1, 2]
+
+    def test_scheduler_trims_against_real_cache_capacity(self):
+        cm = _make_cache_manager(num_pages=4, page_size=1)
+        cm._allocate(3)
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.cache_manager = cm
+        reqs = [SimpleNamespace(uid=index, cached_len=0, device_len=1) for index in range(3)]
+
+        trimmed = scheduler._fit_decode_batch(core.Batch(reqs=reqs, phase="decode"))
+
+        assert trimmed is not None
+        assert [req.uid for req in trimmed.reqs] == [0]
+        assert cm.available_size == 1
+
     def test_pipeline_event_preserves_requested_decode_size(self):
         scheduler = Scheduler.__new__(Scheduler)
         scheduler.prefill_telemetry_enabled = True
