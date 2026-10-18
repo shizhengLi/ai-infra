@@ -716,3 +716,20 @@ capacity trim/deferred/retraction，6160 个 decode batch 全部为 batch=1，�
 121/121。该实验接受为 capacity trim/fairness telemetry 集成正确性证据，但不宣称 GPU 吞吐
 收益；下一步进入实验 085 的真实 L20 pressure matrix。详见
 `learning/experiments/084_capacity_trim_fairness_integration_trace.md`。
+
+## 实验 085 结果（阶段 1）
+
+实验 085 在 L20 TP4 Qwen3-32B-AWQ 上做了真实 pressure boundary pilot，固定 `page_size=16`、
+16 个请求、80 req/s，新增 128-token 和 512-token KV cache 的 token/page-aware A/B，并结合
+实验 083 的 256-token 三次重复结果。128-token 点因聊天模板输入约 25 token，合法 output
+长度从 128 调整为 96；512-token 点使用 output 128。所有新运行 16/16 完成，SLO attainment
+为 100%，无 allocator assertion。
+
+128-token cache 下 token/page-aware throughput 为 87.87/89.46 tok/s，P90 TTFT 为
+15184/14948 ms；512-token cache 下为 221.58/216.20 tok/s，P90 TTFT 为 6151/6321 ms。
+两组均只有一次重复，且 telemetry 的 `decode_capacity_trimmed/deferred` 都是 0；256-token
+历史三次重复也全部是 decode batch=1、trim/deferred=0。说明容量变小后主要恶化的是
+admission 排队，尚未自然命中实验 084 的多候选 decode trim 分支。该阶段接受为容量边界、
+工具链和负证据记录，不改变 `token` 默认策略，page-aware 继续 opt-in。下一步应先做 085b
+异构请求/并发候选压力以命中真实 trim，或转入实验 086 Req 预分配 buffer。详见
+`learning/experiments/085_page_aware_pressure_boundary_matrix.md`。

@@ -581,6 +581,26 @@ UID 3/4/5 加入，并用容量 0 制造全量 deferred round。最终 13 个事
 容量选择路径，不等价于 L20 在线吞吐收益。实验 085 仍需在真实 L20 pressure matrix 中寻找
 会自然命中该分支的 workload；在此之前不扩大 page-aware 默认范围。
 
+### 实验 085 阶段 1 已完成：真实 L20 pressure boundary pilot
+
+实验 085 固定 `page_size=16`，在 L20 TP4 Qwen3-32B-AWQ 上比较 128/256/512-token KV
+cache。128-token 点使用 output=96（输入和聊天模板约占 25 token，output=128 会超过
+`max_seq_len`），512-token 点使用 output=128；256-token 点复用实验 083 的三次重复。
+
+新增加的 128-token 单次 A/B 为 token/page-aware 87.87/89.46 tok/s，P90 TTFT
+15184/14948 ms；512-token 单次 A/B 为 221.58/216.20 tok/s，P90 TTFT 6151/6321 ms。
+四次运行均 16/16 完成、SLO 100%，但所有 telemetry 的 `decode_capacity_trimmed` 和
+`decode_capacity_deferred` 都为 0。256-token 历史点同样是 decode batch 全为 1。也就是说，
+当前真实压力主要被 admission 排队消化，page-aware 的多候选 decode fairness 路径仍没有
+被线上 workload 触发。CUDA 工具链还暴露了一个可复现边界：PyTorch/FlashInfer 使用 cu12.8，
+必须显式选择 CUDA 12.8 的 nvcc；系统 CUDA 11.5 会在 `-std=c++20` 阶段失败。
+
+因此 085 阶段 1 只接受 correctness、容量边界和负证据，不接受性能策略 gate，也不改变
+默认 `token`。若要关闭 085 主线，必须先完成 085b：用异构输出长度、更多同时 pending
+请求或受限 `max_running_req` 构造多个 decode candidate，并实际命中 trim/deferred；否则
+page-aware 只能作为安全优先的 opt-in。完整记录见
+`learning/experiments/085_page_aware_pressure_boundary_matrix.md`。
+
 ## 实验 084-088 计划
 
 ### 实验 084：确定性 capacity trim/fairness 集成 trace（已完成）
@@ -597,7 +617,7 @@ UID 3/4/5 加入，并用容量 0 制造全量 deferred round。最终 13 个事
 - 无 stale result、page table 不变量破坏或 allocator assertion；
 - token/page-aware 的选择结果可解释，测试固定 seed 可重复。
 
-### 实验 085：page-aware 在真实 pressure 下的边界矩阵
+### 实验 085：page-aware 在真实 pressure 下的边界矩阵（阶段 1 已完成，085b 待定）
 
 固定 page size=16，组合 256/512/1024 token cache、128/512 output、20/80 req/s 和 8/16 请求。
 先用 token policy 建立 baseline，再只切换 page-aware。报告吞吐、P90/P99 TTFT、P99 TPOT、
@@ -606,6 +626,10 @@ UID 3/4/5 加入，并用容量 0 制造全量 deferred round。最终 13 个事
 接受规则：只有在至少一个真实 trim-path workload 中 page-aware 同时满足容量安全、wait-round
 公平性改善、吞吐不低于 98% 和 P99 TTFT 不回退 5% 才考虑扩大 opt-in 范围；否则保留为
 安全优先策略。
+
+阶段 1 的 128/256/512-token pilot 均未命中真实 trim/deferred，故尚未满足上述接受规则。
+若继续 page-aware 主线，085b 优先采用异构 output/input 和受限并发候选；若转向独立 PR，
+可先做 086，但必须把“085b 尚未通过”保留为 page-aware PR 的明确前置条件。
 
 ### 实验 086：Req 预分配 buffer 上游化
 

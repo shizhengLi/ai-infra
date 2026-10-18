@@ -230,10 +230,10 @@ page、FP8 KV、Graph 和 tokenizer 的大合集。
 | --- | --- | --- | --- |
 | PyNCCL wheel runtime linker | 已实现绝对路径 + rpath | TP4 Qwen3-32B-AWQ 在 L20 初始化、Graph capture、API ready | 高；适合先提交 build/load regression test |
 | decode admission safety guard | 已实现未来 page demand guard | 实验 071/072 无 allocator assertion；默认策略不激进 | 中高；补齐 scheduler focused tests 后可提交 |
-| capacity round-robin / UID cursor | 已实现公平选择和动态 UID 维护 | 实验 073/074/075/076/084；动态集合 trace 通过 | 中高；真实 L20 pressure 仍需 085 |
+| capacity round-robin / UID cursor | 已实现公平选择和动态 UID 维护 | 实验 073/074/075/076/084；动态集合 trace 通过 | 中高；真实 L20 trim-path 仍需 085b |
 | wait-round telemetry | 已实现字段和 trace 输出 | 实验 076/084 命中 12 trim + 1 deferred；077/082/083 保留 admission 负证据 | 高；属于低风险 observability PR |
 | Req preallocated token buffer | 本地已验证 allocation/copy 明显下降 | 实验 060 无 token 错误，但 E2E 吞吐无收益 | 高；应诚实定位为 CPU overhead PR |
-| page-aware reservation | 已实现 opt-in | 实验 078 有 trim 安全收益，079/083 无稳定性能收益，084 验证公平基础设施 | 中低；仍需 085 的真实策略 A/B |
+| page-aware reservation | 已实现 opt-in | 实验 078 有 trim 安全收益，079/083/085 阶段 1 未形成稳定线上收益，084 验证公平基础设施；085 真实矩阵仍为 trim=0 | 低；必须先完成 085b 真实 trim-path A/B |
 | L20 Graph shape policy | 已实现 opt-in l20 policy | 实验 066 padding 15.65% -> 1.48%，低负载 tail 回退 | 中；需要更广矩阵和显存预算测试 |
 | FP8 KV cache | 有 opt-in pool/fused/native 原型 | 实验 061-064 capacity 约 2x，但长上下文 gate 未通过 | 低；先完成 087，不应直接 PR 默认路径 |
 
@@ -271,7 +271,8 @@ pending tokens/requests、wait rounds、Graph hit、budget-limited 和 retractio
 
 **PR 验收**：focused tests 覆盖 UID 完成/取消/新请求、字段默认值、JSONL 可读性和多进程
 rank-0 输出；不改变 scheduler selection。实验 084 已证明 deterministic trim/deferred trace 能
-填充这些字段，实验 085 还需补充真实 L20 pressure 的线上样本。
+填充这些字段；实验 085 阶段 1 已补充真实 L20 pressure 的线上样本，但 trim/deferred 仍为 0，
+因此还需 085b 补充真正的多候选 trim-path 样本。
 
 **面试价值**：这是一个很好的“可观测性先于优化”的故事，能解释为什么 082/083 没有被包装成
 page-aware 性能收益。
@@ -297,7 +298,8 @@ page-aware 性能收益。
 
 1. 实验 084 已命中 `decode_capacity_trimmed/deferred`，并证明 wait-round/fairness cursor
    在动态 membership 下工作；
-2. 实验 085 仍需在不同容量、输出长度和 arrival rate 下重复 token/page-aware；
+2. 实验 085 阶段 1 的 128/256/512-token pilot 仍未命中真实 trim/deferred；需要 085b 用异构
+   请求或受限并发构造多个 decode candidate；
 3. page-aware 至少在一个真实压力区间改善等待公平性或 P99 TTFT，同时吞吐不低于 98%；
 4. 其他区间没有安全回归，并且默认 token 路径完全不变。
 

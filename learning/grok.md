@@ -112,6 +112,12 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 - 实验 084：用确定性多候选 scheduler trace 直接命中 12 次 trim 和 1 次 deferred，覆盖
   UID 完成、取消、新 UID 加入与容量恢复；UID 0/1/2 在 9 轮中各服务 6 次。该结果接受为
   fairness/telemetry 集成正确性证据，但因为没有运行模型，不宣称 GPU 吞吐收益。
+- 实验 085 阶段 1：在 L20 TP4 上构造 128/256/512-token KV cache 的真实 pressure pilot。
+  128-token 点（合法 output=96）token/page-aware 为 87.87/89.46 tok/s，512-token 点
+  （output=128）为 221.58/216.20 tok/s；四次新运行均完成且 SLO 100%，但所有点的
+  `decode_capacity_trimmed/deferred` 都为 0，256-token 历史三次重复也全部 decode batch=1。
+  结论是 admission 排队掩盖了 decode trim，page-aware 仍没有真实线上 fairness 证据，
+  不修改默认策略。该负结果比挑选 128-token 单次 +1.80% 更重要。
 
 ## 当前默认决策
 
@@ -153,8 +159,8 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 
 ## 下一阶段路线
 
-1. 实验 085：在 256/512/1024-token cache 上做 output 128/512 与 arrival rate 20/80 的
-   pressure matrix，寻找 page-aware 的有效边界，而不是继续做无压力 A/B。
+1. 实验 085b：增加异构 output/input、并发候选或受限 `max_running_req`，让真实 L20 workload
+   命中 `decode_capacity_trimmed/deferred`，再决定 page-aware 是否有 PR 级证据。
 2. 实验 086：把 `Req` 预分配 buffer 和 append allocation telemetry 整理为独立上游 PR，
    用长输出 CPU benchmark 证明收益边界。
 3. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，
