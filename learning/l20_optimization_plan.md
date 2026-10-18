@@ -472,6 +472,15 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 因此 page-aware 保留为 tail/safety 优先场景的 opt-in，不修改默认路径；后续推广前需在更大
 page 数、不同输出长度和 TP4 上重复验证。详见 `learning/experiments/078_page_aware_reservation_ab.md`。
 
+## 实验 079 结果
+
+TP4 PyNCCL 默认路径在 L20 GPU 2/3/6/7 上成功启动：NCCL wheel 的版本化
+`libnccl.so.2` 通过绝对链接和 rpath 加载，Gloo 只承担 CPU bootstrap。Qwen3-32B-AWQ、
+8 个 16-token page 的三次 A/B 中，token 吞吐 136.63±3.90 tok/s，page-aware
+135.50±1.90 tok/s，P90 TTFT 511.49/519.38 ms，均无 capacity telemetry 事件。结论是
+PyNCCL 链接修复接受，但 TP4 admission 已提前消化页压力，不能据此宣称 page-aware 收益或
+修改默认策略。详见 `learning/experiments/079_pynccl_tp4_reservation_validation.md`。
+
 ## 实验 074 结果
 
 在 3 page 容量、请求 demand 为 2/1/1 的确定性模型中，round-robin 选择循环为

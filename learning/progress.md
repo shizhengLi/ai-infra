@@ -648,6 +648,16 @@ TPOT 从 42.89 ms 降至 5.69 ms。两组请求均 100% 完成且无 allocator a
 page-aware 作为尾延迟/安全优先场景的 opt-in，不改变默认 token 策略。详见
 `learning/experiments/078_page_aware_reservation_ab.md`。
 
+## 实验 079 结果
+
+实验 079 修复验证了 PyNCCL wheel runtime 链接：`.venv` 中只有 `libnccl.so.2` 时，绝对路径
+加 rpath 的 AOT 模块仍可成功加载；默认 PyNCCL TP4 Qwen3-32B-AWQ 在 L20 GPU 2/3/6/7 完成
+初始化、CUDA Graph capture 和 API ready。Gloo 仅用于 CPU rank/NCCL UID bootstrap，GPU TP
+collective 仍走 PyNCCL/NCCL。随后在 8 个 16-token page 的极小 cache 上做三次 A/B，token
+吞吐 136.63±3.90 tok/s、page-aware 135.50±1.90 tok/s，两组均 24/24 完成、capacity 事件
+均为 0，说明 TP4 admission 已在 guard 前限制活跃集合。该结果接受 PyNCCL 链接修复，不支持
+修改 TP4 默认 reservation 策略。详见 `learning/experiments/079_pynccl_tp4_reservation_validation.md`。
+
 ## 实验 074 结果
 
 实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
