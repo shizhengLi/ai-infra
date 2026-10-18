@@ -109,6 +109,9 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 - 实验 083：在 256-token cache 下 A/B token/page-aware。吞吐 88.99/90.14 tok/s，差异约
   1.30%；两组 telemetry 完全相同，6160 个 decode batch 全部为 1，未命中公平性 cursor。
   这是中性结果，证明 page-aware 在 admission 已串行化时没有可见额外收益。
+- 实验 084：用确定性多候选 scheduler trace 直接命中 12 次 trim 和 1 次 deferred，覆盖
+  UID 完成、取消、新 UID 加入与容量恢复；UID 0/1/2 在 9 轮中各服务 6 次。该结果接受为
+  fairness/telemetry 集成正确性证据，但因为没有运行模型，不宣称 GPU 吞吐收益。
 
 ## 当前默认决策
 
@@ -150,13 +153,11 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 
 ## 下一阶段路线
 
-1. 实验 084：构造确定性多候选 decode trace，让部分请求真正进入 capacity trim/fairness
-   cursor，验证 wait-round telemetry、UID 公平性和完成顺序。
-2. 实验 085：在 256/512/1024-token cache 上做 output 128/512 与 arrival rate 20/80 的
+1. 实验 085：在 256/512/1024-token cache 上做 output 128/512 与 arrival rate 20/80 的
    pressure matrix，寻找 page-aware 的有效边界，而不是继续做无压力 A/B。
-3. 实验 086：把 `Req` 预分配 buffer 和 append allocation telemetry 整理为独立上游 PR，
+2. 实验 086：把 `Req` 预分配 buffer 和 append allocation telemetry 整理为独立上游 PR，
    用长输出 CPU benchmark 证明收益边界。
-4. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，
+3. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，
    保留为研究原型，不修改默认。
-5. 实验 088：将 telemetry、PyNCCL linker、page-aware admission 和 Graph policy 的接口
+4. 实验 088：将 telemetry、PyNCCL linker、page-aware admission 和 Graph policy 的接口
    拆成可审查的 upstream PR，附最小复现、focused tests 和 L20 benchmark，而不是提交大杂烩。

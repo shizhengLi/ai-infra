@@ -705,3 +705,14 @@ page-aware reservation。token 吞吐 88.99±0.39 tok/s、P90 TTFT 19957 ms；pa
 capacity trim/deferred/retraction，6160 个 decode batch 全部为 batch=1，说明 admission 已
 将压力串行化，reservation 没有命中公平性分支。该结果接受为中性 A/B，不修改默认策略。详见
 `learning/experiments/083_tp4_reservation_fairness_under_pressure.md`。
+
+## 实验 084 结果
+
+实验 084 构造了一个 CPU-only 的确定性多候选 scheduler trace：UID 0/1/2 的 page demand 为
+2/1/1，容量为 3 page，连续 9 轮全部命中 `decode_capacity_trimmed`，三 UID 各服务 6 次，
+服务次数差异为 0。随后覆盖 UID 0 完成、UID 1 取消、UID 3/4/5 加入，并用容量 0 制造一轮
+`decode_capacity_deferred`，恢复后 cursor 和 wait-round 状态均正确。总计 12 个 trim 事件、
+1 个 deferred 事件；focused `test_cache_allocate.py` 通过 15/15，完整 `tests/core` 通过
+121/121。该实验接受为 capacity trim/fairness telemetry 集成正确性证据，但不宣称 GPU 吞吐
+收益；下一步进入实验 085 的真实 L20 pressure matrix。详见
+`learning/experiments/084_capacity_trim_fairness_integration_trace.md`。

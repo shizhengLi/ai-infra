@@ -147,6 +147,94 @@ class TestAllocateEvictPageAlignment:
         assert scheduler._decode_capacity_wait_rounds == {2: 2, 0: 1}
         assert scheduler._last_decode_capacity_wait_rounds == {1: 2}
 
+    def test_scheduler_capacity_trace_records_dynamic_fairness(self):
+        """Exercise trim/deferred telemetry across completion, cancel, and new UID events."""
+        scheduler = Scheduler.__new__(Scheduler)
+        scheduler.prefill_telemetry_enabled = True
+        scheduler._is_primary_rank = True
+        scheduler._pipeline_events = []
+        scheduler._pipeline_batch_ids = {}
+        scheduler.engine = SimpleNamespace(
+            graph_runner=SimpleNamespace(can_use_cuda_graph=lambda batch: False)
+        )
+
+        requests = {
+            uid: SimpleNamespace(uid=uid, demand=demand)
+            for uid, demand in {
+                0: 2,
+                1: 1,
+                2: 1,
+                3: 2,
+                4: 1,
+                5: 1,
+            }.items()
+        }
+
+        def run_round(active_uids: list[int], capacity: int) -> list[int]:
+            active = [requests[uid] for uid in active_uids]
+            scheduler.cache_manager = SimpleNamespace(
+                can_allocate_paged=lambda reqs: sum(req.demand for req in reqs) <= capacity
+            )
+            requested_uids = [req.uid for req in active]
+            batch = scheduler._fit_decode_batch(core.Batch(reqs=active, phase="decode"))
+            if batch is None:
+                scheduler._record_pipeline_event(
+                    "decode_capacity_deferred",
+                    requested_batch_size=len(active),
+                    deferred_uids=requested_uids,
+                    wait_rounds=scheduler._decode_capacity_wait_rounds,
+                )
+                return []
+
+            selected_uids = [req.uid for req in batch.reqs]
+            if len(selected_uids) < len(requested_uids):
+                selected = set(selected_uids)
+                scheduler._record_pipeline_event(
+                    "decode_capacity_trimmed",
+                    batch,
+                    requested_batch_size=len(active),
+                    selected_batch_size=len(selected_uids),
+                    deferred_uids=[uid for uid in requested_uids if uid not in selected],
+                    selected_wait_rounds=scheduler._last_decode_capacity_wait_rounds,
+                )
+            return selected_uids
+
+        # Nine fixed rounds establish the 2/1/1 mixed-demand fairness cycle.
+        fixed_selections = [
+            run_round([0, 1, 2], capacity=3)
+            for _ in range(9)
+        ]
+        assert fixed_selections == [
+            [0, 1],
+            [2, 0],
+            [1, 2],
+            [0, 1],
+            [2, 0],
+            [1, 2],
+            [0, 1],
+            [2, 0],
+            [1, 2],
+        ]
+
+        # UID 0 completes and UID 3 joins; then UID 1 is cancelled and UID 4 joins.
+        assert run_round([1, 2, 3], capacity=3) == [1, 2]
+        assert run_round([2, 3, 4], capacity=3) == [3, 4]
+
+        # No visible capacity must defer the candidate without corrupting the cursor.
+        assert run_round([3], capacity=0) == []
+        assert run_round([3, 4, 5], capacity=3) == [3, 4]
+
+        events = scheduler._pipeline_events
+        assert len(events) == 13
+        trim_events = [event for event in events if event["event"] == "decode_capacity_trimmed"]
+        deferred_events = [event for event in events if event["event"] == "decode_capacity_deferred"]
+        assert len(trim_events) == 12
+        assert len(deferred_events) == 1
+        assert deferred_events[0]["deferred_uids"] == [3]
+        assert deferred_events[0]["wait_rounds"] == {3: 1}
+        assert trim_events[-1]["deferred_uids"] == [5]
+        assert trim_events[-1]["selected_wait_rounds"] == {3: 2, 4: 1}
+
     def test_scheduler_trims_against_real_cache_capacity(self):
         cm = _make_cache_manager(num_pages=4, page_size=1)
         cm._allocate(3)

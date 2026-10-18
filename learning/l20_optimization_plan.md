@@ -568,9 +568,22 @@ capacity trim/deferred，decode batch 全为 1，说明 admission 先行串行�
 因此当前系统的首要未知量不是“page-aware 是否平均更快”，而是怎样构造一个既有多个 decode
 候选、又只有部分候选的未来 page demand 能容纳的 trace，从而真正验证 073-076 的公平性实现。
 
+### 实验 084 已完成：capacity trim/fairness 集成 trace
+
+实验 084 使用 CPU-only deterministic trace 直接走 `_fit_decode_batch` 和 pipeline telemetry。
+固定容量为 3 page，UID 0/1/2 的 demand 为 2/1/1，连续 9 轮选择模式为
+`[0,1] -> [2,0] -> [1,2]`，每个 UID 服务 6 次。动态阶段覆盖 UID 0 完成、UID 1 取消、
+UID 3/4/5 加入，并用容量 0 制造全量 deferred round。最终 13 个事件中有 12 个
+`decode_capacity_trimmed` 和 1 个 `decode_capacity_deferred`；恢复容量后 cursor 没有回退，
+新 UID 没有继承旧等待计数。focused 测试 15/15、完整 `tests/core` 121/121 通过。
+
+该结果接受公平性、动态 membership 和 telemetry 集成正确性 gate，但只证明 scheduler 的
+容量选择路径，不等价于 L20 在线吞吐收益。实验 085 仍需在真实 L20 pressure matrix 中寻找
+会自然命中该分支的 workload；在此之前不扩大 page-aware 默认范围。
+
 ## 实验 084-088 计划
 
-### 实验 084：确定性 capacity trim/fairness 集成 trace
+### 实验 084：确定性 capacity trim/fairness 集成 trace（已完成）
 
 目标是绕过 admission 直接串行化的问题，构造多个 running decode 请求的异构剩余 demand：
 例如容量剩余 3 page，候选 demand 为 2/1/1 page，且每一轮只允许 1-2 个请求进入 decode。
