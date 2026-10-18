@@ -464,6 +464,14 @@ TP4 Qwen3-32B-AWQ 在 96 page KV cache 下完成了两轮 overlap pressure trace
 可容纳范围内。该实验确认在线边界稳定性，并提供了“未命中裁剪分支”的证据；不能把它解释为
 等待轮数或吞吐收益。详见 `learning/experiments/077_online_wait_round_validation.md`。
 
+## 实验 078 结果
+
+`token` 与 `page-aware` reservation 在 L20 4-page 边界 trace 上进行了三次重复 A/B。token
+吞吐 338.39±3.23 tok/s、P90 TTFT 268.51 ms，但每轮出现 16 次 decode 容量裁剪，P99 TPOT
+42.89 ms；page-aware 无裁剪、P99 TPOT 5.69 ms，但吞吐下降 12.84%、P90 TTFT 上升 33.62%。
+因此 page-aware 保留为 tail/safety 优先场景的 opt-in，不修改默认路径；后续推广前需在更大
+page 数、不同输出长度和 TP4 上重复验证。详见 `learning/experiments/078_page_aware_reservation_ab.md`。
+
 ## 实验 074 结果
 
 在 3 page 容量、请求 demand 为 2/1/1 的确定性模型中，round-robin 选择循环为

@@ -638,6 +638,16 @@ allocator assertion 或进程异常退出。低并发 P90 TTFT 为 123.29 ms，�
 证据，不宣称等待轮数 telemetry 已在线命中或带来性能收益。详见
 `learning/experiments/077_online_wait_round_validation.md`。
 
+## 实验 078 结果
+
+实验 078 对 `token` 与 `page-aware` prefill reservation 做了相同 trace 的三次 L20 A/B。
+在 4 page、`input=17/output=16` 的页边界压力下，token 平均吞吐 338.39±3.23 tok/s、P90
+TTFT 268.51 ms，每轮产生 16 次 `decode_capacity_trimmed`；page-aware 吞吐
+294.93±10.11 tok/s（-12.84%）、P90 TTFT 358.77 ms（+33.62%），三轮均无容量裁剪，P99
+TPOT 从 42.89 ms 降至 5.69 ms。两组请求均 100% 完成且无 allocator assertion。该结果支持
+page-aware 作为尾延迟/安全优先场景的 opt-in，不改变默认 token 策略。详见
+`learning/experiments/078_page_aware_reservation_ab.md`。
+
 ## 实验 074 结果
 
 实验 074 将容量上限设为 3 page，构造 UID 0/1/2 的异构 demand：2/1/1 page。round-robin
