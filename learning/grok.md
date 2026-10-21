@@ -129,6 +129,11 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
   慢约 3.28x/3.10x；focused Req/safe-retraction tests 10/10。结合实验 060 的 L20 A/B，
   该改动消除了 allocation 和 O(n) copy，却没有端到端吞吐收益。面试时应把它定位为
   allocator/copy pressure 基础设施 PR，而不是 serving 性能 PR。
+- 实验 087：完成 BF16 KV vs fused FP8 KV 的 4K/16K context、128/512 output 最终 gate。
+  FP8 在相同显存预算下把 capacity 从 339,255 提高到 678,510 tokens，饱和率仅
+  0.0000119%；但吞吐回退 15.9%--36.2%，平均 TPOT 增加 20.9%--80.4%，相同 4K prompt
+  的 512-token 输出在第 13 token 分叉。面试时应强调“capacity、quality、performance 是
+  三个独立 gate”：容量翻倍不能抵消质量和 decode 性能失败。
 
 ## 当前默认决策
 
@@ -143,7 +148,7 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 | page size 8/16/32 | 不改默认 | 结果依赖输出长度和 batch shape |
 | L20 Graph shape policy | coarse 默认，l20 opt-in | padding 明显下降但低负载 tail 仍有风险 |
 | tokenizer wait | 0 ms 默认 | CPU microbenchmark 有收益，低速率 TTFT gate 未通过 |
-| FP8 KV cache | default-disabled | capacity 有潜力，但长上下文和 kernel gate 未完成 |
+| FP8 KV cache | capacity-first opt-in | capacity 2x，但实验 087 长输出质量分叉且 TPOT/吞吐失败 |
 
 ## 面试时如何讲
 
@@ -173,7 +178,6 @@ L20 是 Ada Lovelace 数据中心卡，Compute Capability 为 SM89，单卡 48 G
 1. 实验 085c（条件性）：只做 overlap/page allocation race 的最小 reproducer；不再靠提高
    arrival rate 反复 sweep。若仍无法命中真实 trim，接受 deterministic integration 证据即可。
 2. 实验 086：已完成；整理成独立上游 PR，明确 CPU overhead/可扩展性收益边界。
-3. 实验 087：完成 FP8 KV fused cast/store 的长上下文 quality/ITL gate；若仍无端到端收益，
-   保留为研究原型，不修改默认。
+3. 实验 087：已完成；capacity gate 通过，quality/ITL gate 失败，保留为研究原型和容量兜底。
 4. 实验 088：将 telemetry、PyNCCL linker、page-aware admission 和 Graph policy 的接口
    拆成可审查的 upstream PR，附最小复现、focused tests 和 L20 benchmark，而不是提交大杂烩。

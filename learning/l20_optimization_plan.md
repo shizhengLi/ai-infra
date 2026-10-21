@@ -252,7 +252,7 @@ optimization. Present the work as a bottleneck-driven loop:
 | 058 | Joint pending-token and active-decode pressure gate | **Complete:** joint gating recovers queue-only throughput loss, but does not improve TTFT SLO | Two joint policies; 18 runs; default compatibility, telemetry, throughput, TTFT and TPOT gates |
 | 059 | Page-aware admission and safe decode retraction | **In progress:** estimator plus short L20 A/B is complete with no regression; retraction and full matrix remain | P90 TTFT -15%, pending peak -20%, throughput >=98% baseline, no stale/retracted result |
 | 060 | Preallocated `Req` token buffer | **Complete, conditional:** L20 A/B removes 100% append allocations and 99.95% copied tokens with no end-to-end gain; CPU wall-time -50% gate failed | Long-output append CPU time -50%, token-identical output, no decode regression |
-| 061 | L20 FP8 KV cache v2 | **Stage 2 telemetry complete:** opt-in FP8 pool, dtype-aware page accounting, first-eager-prefill per-layer calibration, and rank-scoped real-model summary; fused store and quality/perf gates remain | Capacity +70% target exceeded (2.00x tokens); real short-request weighted saturation 0.00226%; long-context quality/ITL/TTFT gates remain |
+| 061 | L20 FP8 KV cache v2 | **Complete, capacity-only:** opt-in FP8 pool, dtype-aware page accounting, per-layer calibration and fused store are complete; experiment 087 rejected default promotion | Capacity 2.00x; final saturation 0.0000119%; long-output quality and performance gates failed |
 | 062 | FP8 KV long-context quality/performance gate | **Complete, performance rejected:** 4096/8192/16384 eager A/B, long-context saturation and deterministic output smoke pass; no end-to-end speedup | 2.00x KV capacity; 0.000843% weighted saturation; TPOT +36.73%--+69.34%, throughput -10.26%--29.22%; proceed to fused cast/store |
 | 063 | FP8 KV fused cast/store | **Complete, conditional:** opt-in BF16/FP16-to-FP8 fused conversion and indexed page store; correctness passes and end-to-end TPOT improves, but pure write kernel remains slower | TPOT -14.6%--29.0% vs same-code legacy; byte-identical output; microbenchmark +13.6%--60.7%, keep default disabled |
 | 064 | FP8 KV native pair conversion | **Complete, conditional:** SM89 native BF16/FP16 pair conversion lowers selected write-kernel timings, but non-representable scales are not byte-exact | At least 3/4 row sizes improve 20%; byte-exact output for calibrated scales; otherwise keep opt-in |
@@ -550,7 +550,7 @@ capacity trim/deferred，decode batch 全为 1，说明 admission 先行串行�
 | page size 8/16/32 | 实验 080/081 | 短输出与长输出排序不同，未形成全局最优结论 |
 | L20 Graph shape policy | 实验 066 | padding 15.65% -> 1.48%，但低负载 P99 TPOT 有回退 |
 | tokenizer micro-batch wait | 实验 067 | CPU median 2.26x，但 1 ms wait 未通过低速率 TTFT gate |
-| FP8 KV cache fused/native path | 实验 061-064 | capacity 约 2x，但长上下文 TPOT/写 kernel/scale quality gate 未完成 |
+| FP8 KV cache fused/native path | 实验 061-064/087 | capacity 2x，但长输出第 13 token 分叉，吞吐和 TPOT gate 失败 |
 | safe retraction hysteresis | 实验 068-070 | 减少 thrashing，但多次重复未稳定改善 TTFT；保持 opt-in |
 
 ### 实验 080-083 的统一解释
@@ -665,11 +665,17 @@ gate 通过，CPU wall-time -50% 与 serving throughput gate 拒绝。保留当�
 实现，`cat` 仅作 regression mode；该能力可拆成独立 upstream PR，PR 叙述聚焦 CPU overhead
 和长输出可扩展性。
 
-### 实验 087：FP8 KV cache 最终 quality/performance gate
+### 实验 087：FP8 KV cache 最终 quality/performance gate（已完成，默认候选拒绝）
 
-在 Qwen3-32B TP4 上比较 BF16 KV 与 FP8 KV 的 4096/8192/16384 context、128/512 output。
-固定 scale calibration，分别测 capacity、P99 TPOT、写 kernel 时间、长上下文 token agreement
-和显存。只有 fused cast/store 真实降低端到端 TPOT 且质量 gate 通过，才继续做默认候选。
+在 Qwen3-32B TP4 上比较 BF16 KV 与 FP8 KV 的 4096/16384 context、128/512 output。
+固定 scale calibration，分别测 capacity、P99 TPOT、长上下文 token agreement 和显存。
+只有 fused cast/store 真实降低端到端 TPOT 且质量 gate 通过，才继续做默认候选。
+
+最终矩阵使用 4K/16K context 和 128/512 output，每点重复 2 次。FP8 capacity 精确为 BF16
+的 2.00x，256/256 层完成校准，累计饱和率 0.0000119%；但四个点吞吐回退
+15.88%--36.23%，平均 TPOT 增加 20.86%--80.45%。相同 4K prompt 的 512-token greedy
+输出在第 13 个内容 token 分叉。容量/校准 gate 通过，质量/性能 gate 失败，故 FP8 KV
+只保留为 capacity-first opt-in，不成为默认或通用性能候选。
 
 ### 实验 088：可审查的 upstream PR 拆分
 

@@ -124,6 +124,11 @@ KV storage 理论上从 BF16 变为 FP8，单 token 字节数减半。L20 Qwen3-
 - 8k/16k context greedy token agreement、perplexity 或至少固定问答集质量不回退超过 1%。
 - BF16 KV 默认路径 zero regression；unsupported backend 有明确错误。
 
+实验 087 的最终状态是：capacity 2.00x 和 saturation gate 通过，但 4K/16K 长输出 TPOT
+回退 20.9%--80.4%，吞吐下降 15.9%--36.2%，4K/512 greedy 输出在第 13 token 分叉。
+因此本节的性能/质量验收明确失败；PR-C 只能缩减为 default-disabled 的 dtype/capacity
+实验基础设施，不能按“L20 性能优化”提交。
+
 上游 #132 报告了 2x cache capacity 和 5--27% median ITL 改善，但也诚实报告了 4--12%
 TTFT regression、未校准 scale 和 SM90 FlashAttention 限制；这正好给我们的 L20 v2 提供了
 清晰的改进点。
@@ -236,7 +241,7 @@ page、FP8 KV、Graph 和 tokenizer 的大合集。
 | Req preallocated token buffer | 本地已验证 allocation/copy 明显下降；实验 086 完成长输出 gate | 实验 060/086 无 token 错误，allocation -100%、copy reduction 2457x/4551x，但 E2E 吞吐无收益、microbenchmark wall-time 变慢 | 高；可提交，但必须定位为 CPU overhead/可扩展性 PR |
 | page-aware reservation | 已实现 opt-in | 实验 078 有 trim 安全收益，079/083/085/085b 未形成稳定线上收益，084 验证公平基础设施；真实矩阵均 trim=0 | 低；不应包装成吞吐 PR，需先有 overlap/trim 证据 |
 | L20 Graph shape policy | 已实现 opt-in l20 policy | 实验 066 padding 15.65% -> 1.48%，低负载 tail 回退 | 中；需要更广矩阵和显存预算测试 |
-| FP8 KV cache | 有 opt-in pool/fused/native 原型 | 实验 061-064 capacity 约 2x，但长上下文 gate 未通过 | 低；先完成 087，不应直接 PR 默认路径 |
+| FP8 KV cache | 有 opt-in pool/fused/native 原型 | 实验 087 capacity 2x、饱和率通过，但长输出第 13 token 分叉，吞吐 -15.9%--36.2%、TPOT +20.9%--80.4% | 低；仅适合实验性 capacity PR，不得作为默认性能优化 |
 
 ## 推荐的 PR 拆分
 
@@ -345,10 +350,11 @@ window。必须覆盖 `num_tokenizer=0/2/4`、streaming、abort、不同模板�
 ### PR-8：FP8 KV cache v2
 
 对应上游 #132，但目前不适合直接提交默认开启版本。L20 是 SM89，不能假设 SM90 的
-FlashAttention FP8 KV 路径可用；还需要 calibrated scale、fused cast/store 和 long-context
-quality gate。实验 061-064 的 capacity 结果足以证明方向值得研究，但性能退化和 scale 精度
-仍是 blocker。实验 087 通过后，再拆成 dtype validation、scale metadata、kernel、quality
-benchmark 四个 PR。
+FlashAttention FP8 KV 路径可用。实验 087 已完成 calibrated fused path 的 long-context
+quality/performance gate：capacity 翻倍成立，但长输出在第 13 token 分叉，且所有性能点
+均显著回退。因此近期只考虑拆出 dtype validation、scale telemetry 和 quality benchmark
+这类研究基础设施；fused kernel 本身不作为性能 PR，除非后续 profile 找到并修复
+FlashInfer decode/dequant 瓶颈后重新通过 087 gate。
 
 ## 明确不作为近期 PR 的方向
 

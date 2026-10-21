@@ -762,3 +762,17 @@ preallocated/legacy cat 平均 wall-time 为 44.76/13.64 ms；8192 output 下为
 结论是 correctness 和 allocator/copy pressure gate 通过，CPU wall-time -50% 与 serving
 throughput gate 未通过。该改动适合独立 upstream PR，但只能描述为长输出 CPU 基础设施优化，
 不能宣称当前 L20 吞吐提升。详见 `learning/experiments/086_req_buffer_upstream_gate.md`。
+
+## 实验 087 结果
+
+实验 087 在 L20 TP4 Qwen3-32B FP8 W8A8 上完成 BF16 KV 与 fused FP8 KV 的最终长输出
+gate，覆盖 4K/16K context、128/512 output，每点 2 次重复。相同 20.71 GiB/card KV 预算下，
+capacity 从 BF16 339,255 tokens 提高到 FP8 678,510 tokens，精确 2.00x；4 ranks 的 256 层
+全部完成校准，累计 117.6 亿个写入元素的饱和率仅 0.0000119%。
+
+但 FP8 fused 在四个性能点的吞吐分别回退 15.88%、36.23%、30.66%、25.63%，平均 TPOT
+分别增加 20.86%、60.11%、80.45%、42.09%。新增确定性质量工具对相同 4K prompt 生成
+512 tokens，BF16/FP8 在第 13 个内容 token 即分叉，最终输出 hash 不同。focused FP8/KV
+测试通过 20/20。结论是 capacity 和校准 gate 通过，长输出质量、TPOT 和吞吐 gate 失败；
+FP8 KV 保持 capacity-first 显式 opt-in，不进入默认配置。详见
+`learning/experiments/087_fp8_kv_final_gate.md`。
